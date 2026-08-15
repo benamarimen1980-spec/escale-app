@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: escale
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true

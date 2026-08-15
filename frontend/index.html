@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESCALE — Gestion des Importations &amp; Trésorerie</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F6F3; --panel:#FFFFFF; --ink:#152420; --ink-soft:#5B6B62; --ink-faint:#8A968E; --border:#DDE3DA;
+  --sidebar:#0F211C; --sidebar-ink:#CFE0D6; --sidebar-ink-dim:#7FA093;
+  --teal:#1E6F63; --teal-dark:#134E45; --teal-tint:#E4F1EC;
+  --amber:#C9821F; --amber-tint:#FBEEDA; --red:#B5402F; --red-tint:#FBE7E2; --blue:#2E5C8A; --blue-tint:#E7EEF6;
+  --font-display:'Space Grotesk',sans-serif; --font-body:'IBM Plex Sans',sans-serif; --font-mono:'IBM Plex Mono',monospace;
+  --radius:10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{font-family:var(--font-body);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+.app{display:flex;min-height:100vh;}
+
+/* ---- LOGIN ---- */
+.login-screen{min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;background:var(--sidebar);}
+.login-card{background:var(--panel);border-radius:14px;padding:38px 36px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.login-brand{display:flex;align-items:center;gap:10px;margin-bottom:26px;}
+.login-brand .brand-mark{width:38px;height:38px;border-radius:9px;background:linear-gradient(155deg,var(--teal),#2E9482);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;color:#fff;font-size:16px;}
+.login-brand .name{font-family:var(--font-display);font-weight:700;font-size:19px;}
+.login-brand .tag{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;}
+.login-card h2{font-family:var(--font-display);font-size:16px;margin:0 0 4px;}
+.login-card .sub{font-size:12.5px;color:var(--ink-soft);margin-bottom:20px;}
+.field{margin-bottom:14px;}
+.field label{font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:5px;}
+.field input,.field select{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;}
+.login-error{background:var(--red-tint);color:var(--red);font-size:12.5px;padding:8px 11px;border-radius:8px;margin-bottom:14px;}
+.demo-accounts{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+.demo-accounts .t{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:8px;}
+.demo-chip{display:inline-block;font-family:var(--font-mono);font-size:11px;background:var(--teal-tint);color:var(--teal-dark);padding:4px 9px;border-radius:6px;margin:2px 3px 2px 0;border:none;}
+.demo-chip:hover{background:var(--teal);color:#fff;}
+
+/* ---- SIDEBAR ---- */
+.sidebar{width:236px;flex-shrink:0;background:var(--sidebar);color:var(--sidebar-ink);display:flex;flex-direction:column;padding:22px 16px;position:sticky;top:0;height:100vh;}
+.brand{display:flex;align-items:center;gap:10px;padding:0 6px 22px 6px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:18px;}
+.brand-mark{width:34px;height:34px;border-radius:8px;background:linear-gradient(155deg,var(--teal),#2E9482);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;color:#fff;font-size:15px;flex-shrink:0;}
+.brand-text{line-height:1.15;}
+.brand-text .name{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:0.02em;color:#fff;}
+.brand-text .tag{font-size:10.5px;color:var(--sidebar-ink-dim);letter-spacing:0.03em;text-transform:uppercase;}
+.nav{display:flex;flex-direction:column;gap:2px;margin-bottom:auto;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;background:none;border:none;color:var(--sidebar-ink-dim);text-align:left;font-size:13.5px;font-weight:500;transition:background .12s,color .12s;}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:.85;}
+.nav-item:hover{background:rgba(255,255,255,0.06);color:#fff;}
+.nav-item.active{background:var(--teal);color:#fff;}
+.nav-item.active svg{opacity:1;}
+.session-box{border-top:1px solid rgba(255,255,255,0.08);padding-top:14px;margin-top:14px;}
+.session-box .who{font-size:13px;color:#fff;font-weight:600;}
+.session-box .role{font-size:11px;color:var(--sidebar-ink-dim);margin-top:2px;}
+.session-box .logout{margin-top:10px;width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff;padding:7px;border-radius:7px;font-size:12px;}
+.session-box .logout:hover{background:rgba(255,255,255,.12);}
+
+/* ---- MAIN ---- */
+.main{flex:1;min-width:0;padding:26px 34px 60px;}
+.topbar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:10px;}
+.topbar h1{font-family:var(--font-display);font-size:22px;margin:0;font-weight:600;}
+.topbar .sub{color:var(--ink-soft);font-size:13px;margin-top:3px;}
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.today-chip{font-family:var(--font-mono);font-size:11.5px;background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:20px;color:var(--ink-soft);}
+.btn{border:1px solid var(--border);background:var(--panel);color:var(--ink);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;}
+.btn:hover{border-color:var(--teal);}
+.btn.primary{background:var(--teal);border-color:var(--teal);color:#fff;}
+.btn.primary:hover{background:var(--teal-dark);}
+.btn.small{padding:5px 9px;font-size:12px;border-radius:6px;}
+.btn.ghost{background:none;border:none;color:var(--teal);padding:4px 2px;}
+.btn.ghost:hover{text-decoration:underline;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.readonly-banner{background:var(--amber-tint);border:1px solid #EAD2A6;color:#7A5313;padding:9px 13px;border-radius:8px;font-size:12.5px;margin-bottom:18px;display:flex;gap:8px;align-items:center;}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--teal-dark);color:#fff;padding:11px 16px;border-radius:8px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;}
+.toast.error{background:var(--red);}
+
+.grid{display:grid;gap:16px;}
+.kpi-grid{grid-template-columns:repeat(4,1fr);margin-bottom:20px;}
+.kpi-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 17px;}
+.kpi-card .label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-bottom:8px;}
+.kpi-card .value{font-family:var(--font-mono);font-size:22px;font-weight:600;color:var(--ink);}
+.kpi-card .value small{font-size:12px;font-weight:500;color:var(--ink-soft);}
+.kpi-card .delta{font-size:11.5px;margin-top:6px;color:var(--ink-soft);}
+.kpi-card .delta.up{color:var(--red);}
+.kpi-card .delta.down{color:var(--teal);}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;}
+.panel h2{font-family:var(--font-display);font-size:15px;margin:0 0 3px;font-weight:600;}
+.panel .panel-sub{font-size:12px;color:var(--ink-soft);margin-bottom:14px;}
+.panel-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px;flex-wrap:wrap;}
+.two-col{display:grid;grid-template-columns:1.35fr 1fr;gap:18px;align-items:start;}
+.alert-row{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);}
+.alert-row:last-child{border-bottom:none;}
+.alert-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+.alert-dot.amber{background:var(--amber);}
+.alert-dot.red{background:var(--red);}
+.alert-text{font-size:13px;line-height:1.4;}
+.alert-text b{font-weight:600;}
+.alert-meta{font-size:11px;color:var(--ink-faint);margin-top:2px;font-family:var(--font-mono);}
+.alert-empty{color:var(--ink-faint);font-size:13px;padding:8px 0;}
+.bars{display:flex;align-items:flex-end;gap:14px;height:150px;padding-top:10px;}
+.bar-col{display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;}
+.bar-stack{width:100%;max-width:46px;display:flex;flex-direction:column-reverse;border-radius:4px 4px 0 0;overflow:hidden;}
+.bar-seg{width:100%;}
+.bar-label{font-size:10.5px;color:var(--ink-soft);font-family:var(--font-mono);}
+.legend{display:flex;gap:14px;margin-top:10px;flex-wrap:wrap;}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft);}
+.legend-swatch{width:9px;height:9px;border-radius:2px;}
+.dossier-list{display:flex;flex-direction:column;gap:12px;}
+.dossier-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:15px 18px;}
+.dossier-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
+.dossier-ref{font-family:var(--font-mono);font-size:12.5px;color:var(--ink-faint);letter-spacing:.02em;}
+.dossier-name{font-family:var(--font-display);font-weight:600;font-size:15.5px;margin-top:2px;}
+.status-pill{font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;white-space:nowrap;}
+.status-preparation{background:#EFEEF4;color:#4B4470;}
+.status-transit{background:var(--blue-tint);color:var(--blue);}
+.status-port{background:var(--teal-tint);color:var(--teal-dark);}
+.status-douane{background:var(--amber-tint);color:#7A5313;}
+.status-livre{background:#E3F2E5;color:#276B3B;}
+.status-cloture{background:#EDEEF0;color:#5B6B62;}
+.dossier-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--ink-soft);}
+.dossier-meta span b{color:var(--ink);font-weight:600;}
+.rail{position:relative;margin:20px 4px 6px;padding-top:6px;}
+.rail-line{position:absolute;top:15px;left:0;right:0;height:2px;background:var(--border);}
+.rail-pts{display:flex;justify-content:space-between;position:relative;}
+.rail-pt{display:flex;flex-direction:column;align-items:center;flex:1;text-align:center;}
+.rail-dot{width:11px;height:11px;border-radius:50%;background:var(--border);border:2px solid var(--panel);z-index:1;margin-bottom:6px;}
+.rail-dot.done{background:var(--teal);}
+.rail-dot.late{background:var(--red);}
+.rail-dot.pending{background:#fff;border:2px solid var(--ink-faint);}
+.rail-name{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);}
+.rail-date{font-family:var(--font-mono);font-size:11.5px;margin-top:2px;}
+.rail-date.late{color:var(--red);font-weight:600;}
+.dossier-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--border);}
+td{padding:8px 8px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:12.5px;}
+td.txt{font-family:var(--font-body);}
+tr:last-child td{border-bottom:none;}
+tfoot td{font-weight:600;border-top:1px solid var(--ink);border-bottom:none;}
+.toggle-group{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px;}
+.toggle-group button{border:none;background:none;padding:6px 12px;font-size:12px;border-radius:6px;color:var(--ink-soft);}
+.toggle-group button.active{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.select-inline{font-family:inherit;font-size:13px;padding:7px 9px;border-radius:7px;border:1px solid var(--border);background:var(--panel);}
+.badge-mode{font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;background:var(--teal-tint);color:var(--teal-dark);}
+.diff-up{color:var(--red);font-weight:600;}
+.diff-down{color:var(--teal);font-weight:600;}
+.muted{color:var(--ink-faint);}
+.role-chip{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--teal-tint);color:var(--teal-dark);}
+.loading{padding:40px;text-align:center;color:var(--ink-faint);font-size:13px;}
+
+/* ---- MODAL ---- */
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,33,28,.55);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:100;}
+.modal{background:var(--panel);border-radius:14px;width:100%;max-width:720px;padding:26px 28px 28px;}
+.modal h2{font-family:var(--font-display);font-size:17px;margin:0 0 3px;}
+.modal .modal-sub{font-size:12.5px;color:var(--ink-soft);margin-bottom:18px;}
+.modal-section{margin-bottom:18px;}
+.modal-section .sec-title{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:600;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.form-grid.cols2{grid-template-columns:repeat(2,1fr);}
+.form-grid label{font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;}
+.form-grid input,.form-grid select{width:100%;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font-size:13px;}
+.dyn-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center;}
+.dyn-row input,.dyn-row select{padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;}
+.dyn-row.pay{grid-template-columns:1fr 0.7fr 1fr 0.8fr 1fr auto;}
+.dyn-remove{background:var(--red-tint);color:var(--red);border:none;border-radius:6px;width:28px;height:28px;font-size:14px;}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;}
+.frais-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.frais-grid label{font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;}
+.frais-grid input{width:100%;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font-size:13px;}
+
+@media(max-width:980px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr);}
+  .two-col{grid-template-columns:1fr;}
+  .form-grid{grid-template-columns:1fr 1fr;}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* =========================================================
+   ESCALE — Frontend connecté à l'API (backend/server.js)
+   ========================================================= */
+const API_BASE = (window.ESCALE_API_BASE) || '/api';
+
+let session = null; // { token, user }
+let currentTab = 'dashboard';
+let cache = { dossiers: [], kpis: null, alerts: [], echeancier: [], users: [], auditLog: [] };
+let financeMode = 'est';
+let financeSelected = null;
+
+const TODAY_STR = () => new Date().toISOString().slice(0,10);
+const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+const fmtMoney = (v,cur) => (v==null?'—':(Math.round(v).toLocaleString('fr-FR') + ' ' + cur));
+
+/* ---------------- API CLIENT ---------------- */
+async function api(path, opts={}){
+  const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  if(session?.token) headers['Authorization'] = 'Bearer ' + session.token;
+  const res = await fetch(API_BASE + path, { ...opts, headers });
+  if(res.status === 401){ logout(); throw new Error('Session expirée, veuillez vous reconnecter.'); }
+  const isJson = (res.headers.get('content-type')||'').includes('application/json');
+  const data = isJson ? await res.json() : null;
+  if(!res.ok) throw new Error((data && data.error) || `Erreur HTTP ${res.status}`);
+  return data;
+}
+
+async function downloadFile(path, filename){
+  const headers = {};
+  if(session?.token) headers['Authorization'] = 'Bearer ' + session.token;
+  const res = await fetch(API_BASE + path, { headers });
+  if(!res.ok){ toast('Échec du téléchargement.', true); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function toast(msg, isError){
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3200);
+}
+
+/* ---------------- AUTH ---------------- */
+function logout(){
+  session = null;
+  cache = { dossiers: [], kpis: null, alerts: [], echeancier: [], users: [], auditLog: [] };
+  renderRoot();
+}
+
+async function login(email, password){
+  const data = await api('/auth/login', { method:'POST', body: JSON.stringify({email,password}) });
+  session = data;
+  currentTab = 'dashboard';
+  await loadAll();
+  renderRoot();
+}
+
+/* ---------------- DATA LOADING ---------------- */
+async function loadAll(){
+  const [d, k, a, e] = await Promise.all([
+    api('/dossiers'), api('/dashboard/kpis'), api('/dashboard/alerts'), api('/dashboard/echeancier'),
+  ]);
+  cache.dossiers = d.dossiers;
+  cache.kpis = k.kpis;
+  cache.alerts = a.alerts;
+  cache.echeancier = e.echeancier;
+  if(!financeSelected && cache.dossiers.length) financeSelected = cache.dossiers[0].id;
+  if(session.user.role === 'admin'){
+    try {
+      const [u, log] = await Promise.all([api('/users'), api('/users/audit-log')]);
+      cache.users = u.users; cache.auditLog = log.log;
+    } catch(e){}
+  }
+}
+
+async function refresh(){ await loadAll(); renderRoot(); }
+
+/* ---------------- ROLES / NAV ---------------- */
+const ROLE_LABELS = { admin:'Admin / Direction', achats:'Service Achats', logistique:'Service Logistique', finance:'Comptabilité / Finance' };
+const NAV_ITEMS = [
+  {id:'dashboard', label:'Dashboard', icon:'grid', roles:['admin','achats','logistique','finance']},
+  {id:'achats', label:'Dossiers & Achats', icon:'box', roles:['admin','achats']},
+  {id:'logistique', label:'Logistique', icon:'ship', roles:['admin','logistique']},
+  {id:'finance', label:'Finance & Coût de revient', icon:'calc', roles:['admin','finance']},
+  {id:'tresorerie', label:'Trésorerie', icon:'cash', roles:['admin','finance']},
+  {id:'utilisateurs', label:'Utilisateurs', icon:'users', roles:['admin']},
+];
+const ICONS = {
+  grid:'<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" stroke="currentColor" stroke-width="1.6" fill="none"/>',
+  box:'<path d="M3 7l9-4 9 4-9 4-9-4z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M3 7v10l9 4 9-4V7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M12 11v10" stroke="currentColor" stroke-width="1.6"/>',
+  ship:'<path d="M3 15h18l-2 5H5l-2-5z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M6 15V6h5l3 4h4l1 5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M10 3v3" stroke="currentColor" stroke-width="1.6"/>',
+  calc:'<rect x="4" y="2" width="16" height="20" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M7 6h10M7 11h2M11 11h2M15 11h2M7 15h2M11 15h2M15 15h2M7 19h2M11 19h2M15 19h2" stroke="currentColor" stroke-width="1.4"/>',
+  cash:'<rect x="2" y="6" width="20" height="12" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/>',
+  users:'<circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.6" fill="none"/><circle cx="17.5" cy="9" r="2.6" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M14.5 20c.3-2.6 2-4.6 4.2-5.4" stroke="currentColor" stroke-width="1.4" fill="none"/>',
+};
+const STATUTS = {
+  preparation:{label:'En préparation', cls:'status-preparation'},
+  transit:{label:'En transit', cls:'status-transit'},
+  port:{label:'Arrivé au port', cls:'status-port'},
+  douane:{label:'En dédouanement', cls:'status-douane'},
+  livre:{label:'Livré usine', cls:'status-livre'},
+  cloture:{label:'Clôturé', cls:'status-cloture'},
+};
+const TITLES = {
+  dashboard:['Dashboard', 'Vue de synthèse — trésorerie, logistique et alertes'],
+  achats:['Dossiers & Achats', "Création et suivi des dossiers d'importation"],
+  logistique:['Suivi Logistique', 'Expéditions, conteneurs et jalons temporels'],
+  finance:['Finance & Coût de revient', 'Frais annexes et calcul du Landed Cost'],
+  tresorerie:['Trésorerie', 'Échéancier de décaissement prévisionnel'],
+  utilisateurs:['Utilisateurs', "Gestion des accès (RBAC) et journal d'audit"],
+};
+
+/* ---------------- ROOT RENDER ---------------- */
+function renderRoot(){
+  const root = document.getElementById('root');
+  if(!session){ root.innerHTML = loginScreen(); attachLoginHandlers(); return; }
+  root.innerHTML = appShell();
+  attachShellHandlers();
+}
+
+/* ---------------- LOGIN SCREEN ---------------- */
+function loginScreen(errorMsg){
+  return `
+  <div class="login-screen">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-mark">E</div>
+        <div><div class="name">ESCALE</div><div class="tag">Import &amp; Trésorerie</div></div>
+      </div>
+      <h2>Connexion</h2>
+      <div class="sub">Authentifiez-vous pour accéder à votre espace de travail.</div>
+      ${errorMsg ? `<div class="login-error">${errorMsg}</div>` : ''}
+      <form id="loginForm">
+        <div class="field"><label>Email</label><input type="email" id="loginEmail" required placeholder="prenom@escale.tn"></div>
+        <div class="field"><label>Mot de passe</label><input type="password" id="loginPassword" required placeholder="••••••••"></div>
+        <button class="btn primary" type="submit" style="width:100%;">Se connecter</button>
+      </form>
+      <div class="demo-accounts">
+        <div class="t">Comptes de démonstration (mot de passe : demo1234)</div>
+        <button class="demo-chip" data-demo="admin@escale.tn">admin@escale.tn</button>
+        <button class="demo-chip" data-demo="achats@escale.tn">achats@escale.tn</button>
+        <button class="demo-chip" data-demo="logistique@escale.tn">logistique@escale.tn</button>
+        <button class="demo-chip" data-demo="finance@escale.tn">finance@escale.tn</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function attachLoginHandlers(){
+  document.getElementById('loginForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    try{ await login(email, password); }
+    catch(err){ document.getElementById('root').innerHTML = loginScreen(err.message); attachLoginHandlers(); }
+  });
+  document.querySelectorAll('[data-demo]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.getElementById('loginEmail').value = b.dataset.demo;
+      document.getElementById('loginPassword').value = 'demo1234';
+    });
+  });
+}
+
+/* ---------------- APP SHELL ---------------- */
+function appShell(){
+  const role = session.user.role;
+  return `
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">E</div><div class="brand-text"><div class="name">ESCALE</div><div class="tag">Import &amp; Trésorerie</div></div></div>
+      <nav class="nav">
+        ${NAV_ITEMS.filter(i=>i.roles.includes(role)).map(i=>`
+          <button class="nav-item ${i.id===currentTab?'active':''}" data-tab="${i.id}">
+            <svg viewBox="0 0 24 24">${ICONS[i.icon]}</svg>${i.label}
+          </button>`).join('')}
+      </nav>
+      <div class="session-box">
+        <div class="who">${session.user.nom}</div>
+        <div class="role">${ROLE_LABELS[role]}</div>
+        <button class="logout" id="logoutBtn">Se déconnecter</button>
+      </div>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <div><h1>${TITLES[currentTab][0]}</h1><div class="sub">${TITLES[currentTab][1]}</div></div>
+        <div class="topbar-right"><span class="today-chip">Aujourd'hui — ${fmtDate(TODAY_STR())}</span></div>
+      </div>
+      <div id="content">${pageContent()}</div>
+    </main>
+  </div>
+  <div id="modalRoot"></div>
+  `;
+}
+
+function readonlyBanner(moduleRoles){
+  if(session.user.role==='admin' || moduleRoles.includes(session.user.role)) return '';
+  return `<div class="readonly-banner">🔒 Vous consultez ce module en lecture seule avec le profil « ${ROLE_LABELS[session.user.role]} ».</div>`;
+}
+
+function pageContent(){
+  if(currentTab==='dashboard') return pageDashboard();
+  if(currentTab==='achats') return readonlyBanner(['achats']) + pageAchats();
+  if(currentTab==='logistique') return readonlyBanner(['logistique']) + pageLogistique();
+  if(currentTab==='finance') return readonlyBanner(['finance']) + pageFinance();
+  if(currentTab==='tresorerie') return readonlyBanner(['finance']) + pageTresorerie();
+  if(currentTab==='utilisateurs') return pageUtilisateurs();
+  return '';
+}
+
+function attachShellHandlers(){
+  document.querySelectorAll('.nav-item').forEach(b=>{
+    b.addEventListener('click', ()=>{ currentTab=b.dataset.tab; renderRoot(); });
+  });
+  document.getElementById('logoutBtn').addEventListener('click', logout);
+  attachContentHandlers();
+}
+
+/* ---------------- DASHBOARD ---------------- */
+function pageDashboard(){
+  const k = cache.kpis || {byDevise:{}, fretMoyen:0, ecartMoyen:0, leadMoyen:0};
+  const alerts = cache.alerts;
+  const devColors = {USD:'#1E6F63', EUR:'#2E5C8A', TND:'#C9821F'};
+  const windows=[30,60,90];
+  const maxVal = Math.max(1,...windows.flatMap(w=>Object.values(k.byDevise[w]||{})));
+
+  return `
+  <div class="kpi-grid grid">
+    <div class="kpi-card"><div class="label">Trésorerie à engager — 30 j</div>
+      <div class="value">${Object.entries(k.byDevise[30]||{}).map(([c,v])=>fmtMoney(v,c)).join(' · ') || '—'}</div></div>
+    <div class="kpi-card"><div class="label">Coût moyen fret / conteneur</div><div class="value">${fmtMoney(k.fretMoyen,'TND')}</div></div>
+    <div class="kpi-card"><div class="label">Écart moyen budget vs réel</div>
+      <div class="value ${k.ecartMoyen>0?'diff-up':'diff-down'}">${k.ecartMoyen>=0?'+':''}${k.ecartMoyen.toFixed(1)}<small>%</small></div></div>
+    <div class="kpi-card"><div class="label">Délai moyen de transit</div><div class="value">${k.leadMoyen}<small> jours</small></div></div>
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <h2>Trésorerie à engager par devise</h2>
+      <div class="panel-sub">Sorties de fonds cumulées sur 30 / 60 / 90 jours, par devise de règlement</div>
+      <div class="bars">
+        ${windows.map(w=>{
+          const dv = k.byDevise[w]||{};
+          const total = Object.values(dv).reduce((s,v)=>s+v,0);
+          return `<div class="bar-col">
+            <div class="bar-stack" style="height:${Math.max(6,total/maxVal*130)}px">
+              ${Object.entries(dv).map(([c,v])=>`<div class="bar-seg" style="height:${v/(total||1)*100}%;background:${devColors[c]||'#999'}"></div>`).join('')}
+            </div>
+            <div class="bar-label">${w} jours</div></div>`;
+        }).join('')}
+      </div>
+      <div class="legend">${Object.entries(devColors).map(([c,col])=>`<div class="legend-item"><span class="legend-swatch" style="background:${col}"></span>${c}</div>`).join('')}</div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Alertes automatiques</h2></div>
+      <div class="panel-sub">${alerts.length} alerte${alerts.length>1?'s':''} active${alerts.length>1?'s':''}</div>
+      ${alerts.length===0?'<div class="alert-empty">Aucune alerte — tous les dossiers sont dans les délais.</div>':
+        alerts.slice(0,8).map(a=>`
+        <div class="alert-row"><span class="alert-dot ${a.sev}"></span>
+          <div><div class="alert-text">${a.type==='logistique'?'🚢':a.type==='finance'?'⏳':'🚨'} <b>${a.dossierRef}</b> — ${a.text}</div></div>
+        </div>`).join('')}
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Dossiers en cours</h2>
+      <button class="btn small" id="exportDossiersXlsx">⬇ Exporter (Excel)</button>
+    </div>
+    <table>
+      <thead><tr><th>Référence</th><th class="txt">Fournisseur</th><th class="txt">Incoterm</th><th class="txt">Mode</th><th class="txt">ETA</th><th class="txt">Statut</th></tr></thead>
+      <tbody>${cache.dossiers.map(d=>`<tr>
+        <td>${d.ref}</td><td class="txt">${d.fournisseur}</td><td class="txt">${d.incoterm} · ${d.devise}</td>
+        <td class="txt">${d.transport.mode||'—'}</td><td>${fmtDate(d.milestones.eta)}</td>
+        <td class="txt"><span class="status-pill ${STATUTS[d.statut].cls}">${STATUTS[d.statut].label}</span></td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------------- ACHATS ---------------- */
+function pageAchats(){
+  const canEdit = ['admin','achats'].includes(session.user.role);
+  return `
+  <div class="panel-head" style="margin-bottom:14px;"><div></div>
+    ${canEdit?`<button class="btn primary" id="newDossierBtn">+ Nouveau dossier d'importation</button>`:''}
+  </div>
+  <div class="dossier-list">
+  ${cache.dossiers.map(d=>`
+    <div class="dossier-card">
+      <div class="dossier-top">
+        <div><div class="dossier-ref">${d.ref}</div><div class="dossier-name">${d.fournisseur} <span class="muted" style="font-weight:400;font-size:13px;">— ${d.pays||'—'}</span></div></div>
+        <span class="status-pill ${STATUTS[d.statut].cls}">${STATUTS[d.statut].label}</span>
+      </div>
+      <div class="dossier-meta">
+        <span>Incoterm <b>${d.incoterm}</b></span><span>Devise <b>${d.devise}</b></span>
+        <span>Taux prévisionnel <b>${d.tauxPrev??'—'}</b></span>
+        <span>Valeur marchandise <b>${fmtMoney(d.articles.reduce((s,a)=>s+a.valeur,0), d.devise)}</b></span>
+      </div>
+      <table style="margin-top:12px;"><thead><tr><th class="txt">Article</th><th>Qté</th><th>PU</th><th>Valeur</th></tr></thead>
+        <tbody>${d.articles.map(a=>`<tr><td class="txt">${a.designation}</td><td>${a.qte}</td><td>${a.pu.toLocaleString('fr-FR')}</td><td>${a.valeur.toLocaleString('fr-FR')}</td></tr>`).join('')}</tbody>
+      </table>
+      <div class="dossier-meta" style="margin-top:10px;">
+        ${d.paiements.map(p=>`<span>${p.type} <b>${p.pct}%</b> — ${p.base==='commande'?'à la commande':(p.delai+'j après '+p.base.toUpperCase())}</span>`).join('')}
+      </div>
+      <div class="dossier-actions">
+        <button class="btn small" data-pdf="${d.id}">⬇ Fiche PDF</button>
+        ${canEdit?`<button class="btn small" data-edit-achats="${d.id}">✎ Modifier</button>`:''}
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+/* ---------------- LOGISTIQUE ---------------- */
+function pageLogistique(){
+  const canEdit = ['admin','logistique'].includes(session.user.role);
+  return `<div class="dossier-list">
+  ${cache.dossiers.map(d=>{
+    const m = d.milestones;
+    const late = m.eta !== m.etaOrig;
+    const pts = [
+      {name:'ETD', date:m.atd||m.etd, done: !!m.atd, pending: !m.atd},
+      {name:'ETA prév.', date:m.eta, late: late},
+      {name:'ATA', date:m.ata, done: !!m.ata, pending: !m.ata},
+      {name:'Dédouanement', date:m.dedouanementReel||m.dedouanementPrev, done: !!m.dedouanementReel, pending: !m.dedouanementReel},
+      {name:'Livraison usine', date:m.livraisonReel||m.livraisonPrev, done: !!m.livraisonReel, pending: !m.livraisonReel},
+    ];
+    return `<div class="dossier-card">
+      <div class="dossier-top">
+        <div><div class="dossier-ref">${d.ref} · <span class="badge-mode">${d.transport.mode||'—'}</span></div><div class="dossier-name">${d.fournisseur}</div></div>
+        <span class="status-pill ${STATUTS[d.statut].cls}">${STATUTS[d.statut].label}</span>
+      </div>
+      <div class="dossier-meta">
+        <span>N° BL/LTA <b>${d.transport.bl||'—'}</b></span><span>Navire/Vol <b>${d.transport.navire||'—'}</b></span>
+        ${d.transport.conteneurs.length?`<span>Conteneurs <b>${d.transport.conteneurs.join(', ')}</b></span>`:''}
+      </div>
+      <div class="rail"><div class="rail-line"></div><div class="rail-pts">
+        ${pts.map(p=>`<div class="rail-pt"><div class="rail-dot ${p.late?'late':p.done?'done':'pending'}"></div>
+          <div class="rail-name">${p.name}</div><div class="rail-date ${p.late?'late':''}">${fmtDate(p.date)}</div></div>`).join('')}
+      </div></div>
+      ${canEdit?`<div class="dossier-actions">
+        <button class="btn small" data-edit-logistique="${d.id}">✎ Mettre à jour</button>
+        ${d.statut!=='cloture'&&d.statut!=='livre'?`<button class="btn small" data-simulate-delay="${d.id}">⏱ Simuler retard ETA +5 j</button>`:''}
+        ${late?`<button class="btn small" data-reset-delay="${d.id}">↺ Réinitialiser ETA</button>`:''}
+      </div>`:''}
+    </div>`;
+  }).join('')}
+  </div>`;
+}
+
+/* ---------------- FINANCE ---------------- */
+function landedCostCompute(d, mode){
+  const totalVal = d.articles.reduce((s,a)=>s+a.valeur,0);
+  let totalFrais = 0; Object.values(d.frais).forEach(f=>{ totalFrais += mode==='reel' ? (f.reel!=null?f.reel:f.est) : f.est; });
+  const taux = mode==='reel' && d.tauxReel ? d.tauxReel : d.tauxPrev;
+  const items = d.articles.map(a=>{
+    const prorata = totalVal>0 ? a.valeur/totalVal : 0;
+    const fraisAlloc = prorata*totalFrais;
+    const coutRevientLocal = a.valeur*(taux||0) + fraisAlloc;
+    return {...a, fraisAlloc, coutRevientLocal, coutUnitaireLocal: coutRevientLocal/a.qte};
+  });
+  return {items, totalVal, totalFrais};
+}
+const FRAIS_LABELS = {fret:'Fret international',assurance:'Assurance',douane:'Droits de douane & taxes',magasinage:'Magasinage / Surestaries',transitaire:'Honoraires transitaire',transportLocal:'Transport local'};
+
+function pageFinance(){
+  const canEdit = ['admin','finance'].includes(session.user.role);
+  const d = cache.dossiers.find(x=>x.id===financeSelected) || cache.dossiers[0];
+  if(!d) return '<div class="panel">Aucun dossier disponible.</div>';
+  const {items, totalVal, totalFrais} = landedCostCompute(d, financeMode);
+  let fraisEst=0, fraisReel=0; Object.values(d.frais).forEach(f=>{fraisEst+=f.est; fraisReel += f.reel!=null?f.reel:f.est;});
+  const estTotal = totalVal*(d.tauxPrev||0) + fraisEst;
+  const reelTotal = totalVal*(d.tauxReel||d.tauxPrev||0) + fraisReel;
+  const ecartPct = estTotal ? ((reelTotal-estTotal)/estTotal*100) : 0;
+
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <div><h2>Calculateur de coût de revient (Landed Cost)</h2><div class="panel-sub">Répartition automatique des frais annexes au prorata de la valeur des articles</div></div>
+      <select class="select-inline" id="financeDossierSelect">${cache.dossiers.map(x=>`<option value="${x.id}" ${x.id===d.id?'selected':''}>${x.ref} — ${x.fournisseur}</option>`).join('')}</select>
+    </div>
+    <div class="toggle-group" style="margin-bottom:16px;">
+      <button data-fmode="est" class="${financeMode==='est'?'active':''}">Coût estimé</button>
+      <button data-fmode="reel" class="${financeMode==='reel'?'active':''}">Coût réel</button>
+    </div>
+    <table><thead><tr><th class="txt">Article</th><th>Qté</th><th>Valeur (${d.devise})</th><th>Frais alloués (TND)</th><th>Coût de revient (TND)</th><th>Coût unitaire (TND)</th></tr></thead>
+      <tbody>${items.map(a=>`<tr><td class="txt">${a.designation}</td><td>${a.qte}</td><td>${a.valeur.toLocaleString('fr-FR')}</td>
+        <td>${Math.round(a.fraisAlloc).toLocaleString('fr-FR')}</td><td>${Math.round(a.coutRevientLocal).toLocaleString('fr-FR')}</td><td>${a.coutUnitaireLocal.toFixed(2)}</td></tr>`).join('')}
+      </tbody>
+      <tfoot><tr><td class="txt">Total</td><td></td><td>${totalVal.toLocaleString('fr-FR')}</td><td>${Math.round(totalFrais).toLocaleString('fr-FR')}</td><td>${Math.round(items.reduce((s,a)=>s+a.coutRevientLocal,0)).toLocaleString('fr-FR')}</td><td></td></tr></tfoot>
+    </table>
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-head"><h2>Frais annexes du dossier</h2>${canEdit?`<button class="btn small" data-edit-finance="${d.id}">✎ Saisir frais réels</button>`:''}</div>
+      <div class="panel-sub">${d.ref} — montants en TND</div>
+      <table><thead><tr><th class="txt">Poste de frais</th><th>Estimé</th><th>Réel</th><th>Écart</th></tr></thead>
+      <tbody>${Object.entries(d.frais).map(([k,f])=>{
+        const ecart = f.reel!=null? f.reel-f.est : null;
+        return `<tr><td class="txt">${FRAIS_LABELS[k]}</td><td>${f.est.toLocaleString('fr-FR')}</td>
+          <td>${f.reel!=null?f.reel.toLocaleString('fr-FR'):'<span class="muted">—</span>'}</td>
+          <td class="${ecart>0?'diff-up':ecart<0?'diff-down':''}">${ecart!=null?(ecart>0?'+':'')+ecart.toLocaleString('fr-FR'):'—'}</td></tr>`;
+      }).join('')}</tbody></table>
+    </div>
+    <div class="panel">
+      <h2>Comparatif estimé vs réel</h2><div class="panel-sub">Coût de revient total, taux de change inclus</div>
+      <div class="kpi-card" style="border:none;padding:0;">
+        <div class="label">Coût estimé</div><div class="value" style="margin-bottom:14px;">${Math.round(estTotal).toLocaleString('fr-FR')} <small>TND</small></div>
+        <div class="label">Coût réel (partiel/actuel)</div><div class="value">${Math.round(reelTotal).toLocaleString('fr-FR')} <small>TND</small></div>
+        <div class="delta ${ecartPct>0?'up':'down'}">${ecartPct>=0?'+':''}${ecartPct.toFixed(1)}% vs estimation</div>
+      </div>
+      <div class="panel-sub" style="margin-top:14px;">Taux de change : prévisionnel ${d.tauxPrev??'—'} · réel ${d.tauxReel??'en attente'}</div>
+    </div>
+  </div>`;
+}
+
+/* ---------------- TRESORERIE ---------------- */
+function pageTresorerie(){
+  const ech = cache.echeancier;
+  return `
+  <div class="panel">
+    <div class="panel-head"><h2>Échéancier de décaissement prévisionnel</h2>
+      <button class="btn small" id="exportTresorerieXlsx">⬇ Exporter (Excel)</button></div>
+    <div class="panel-sub">Calculé automatiquement à partir des dates ETA/BL et des conditions de paiement — se met à jour si l'ETA glisse</div>
+    <table><thead><tr><th class="txt">Dossier</th><th class="txt">Fournisseur</th><th class="txt">Type</th><th class="txt">Base</th><th>Échéance</th><th>Montant</th><th>Jours restants</th></tr></thead>
+      <tbody>${ech.map(e=>`<tr>
+        <td class="txt">${e.dossierRef}</td><td class="txt">${e.fournisseur}</td><td class="txt">${e.type} (${e.pct}%)</td>
+        <td class="txt">${e.base==='commande'?'Commande':e.base.toUpperCase()} +${e.delai}j</td><td>${fmtDate(e.dateEcheance)}</td>
+        <td>${fmtMoney(e.montant, e.devise)}</td><td class="${e.joursRestants<=7?'diff-up':''}">${e.joursRestants<0?'en retard':e.joursRestants+' j'}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Note sur le risque de change</h2><div class="panel-sub">Comparaison du taux prévisionnel vs taux réel au règlement</div>
+    <table><thead><tr><th class="txt">Dossier</th><th>Devise</th><th>Taux prévisionnel</th><th>Taux réel</th><th>Écart</th></tr></thead>
+      <tbody>${cache.dossiers.filter(d=>d.tauxReel).map(d=>{
+        const ecart = ((d.tauxReel-d.tauxPrev)/d.tauxPrev*100);
+        return `<tr><td class="txt">${d.ref}</td><td>${d.devise}</td><td>${d.tauxPrev}</td><td>${d.tauxReel}</td><td class="${ecart>0?'diff-up':'diff-down'}">${ecart>=0?'+':''}${ecart.toFixed(2)}%</td></tr>`;
+      }).join('') || '<tr><td class="txt muted" colspan="5">Aucun règlement définitif enregistré pour le moment.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------------- UTILISATEURS ---------------- */
+function pageUtilisateurs(){
+  return `
+  <div class="panel">
+    <div class="panel-head"><h2>Utilisateurs &amp; rôles</h2><button class="btn small" id="newUserBtn">+ Nouvel utilisateur</button></div>
+    <div class="panel-sub">Gestion des accès RBAC</div>
+    <table><thead><tr><th class="txt">Nom</th><th class="txt">Email</th><th class="txt">Service</th><th class="txt">Rôle</th></tr></thead>
+      <tbody>${cache.users.map(u=>`<tr><td class="txt">${u.nom}</td><td class="txt">${u.email}</td><td class="txt">${u.service||'—'}</td><td class="txt"><span class="role-chip">${ROLE_LABELS[u.role]}</span></td></tr>`).join('')}</tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Journal d'audit</h2><div class="panel-sub">Traçabilité des actions — qui a modifié quoi, et quand</div>
+    <table><thead><tr><th class="txt">Horodatage</th><th class="txt">Utilisateur</th><th class="txt">Action</th><th class="txt">Détail</th></tr></thead>
+      <tbody>${cache.auditLog.slice(0,25).map(l=>`<tr><td class="txt">${l.timestamp}</td><td class="txt">${l.user_nom||'—'}</td><td class="txt">${l.action}</td><td class="txt muted">${l.details||''}</td></tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------------- MODAL HELPERS ---------------- */
+function openModal(html){
+  document.getElementById('modalRoot').innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><div class="modal">${html}</div></div>`;
+  document.getElementById('modalBackdrop').addEventListener('click', e=>{ if(e.target.id==='modalBackdrop') closeModal(); });
+}
+function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+
+function articleRowHtml(a={}){
+  return `<div class="dyn-row article-row">
+    <input placeholder="Désignation" class="a-designation" value="${a.designation||''}">
+    <input placeholder="Qté" type="number" class="a-qte" value="${a.qte||''}">
+    <input placeholder="Prix unitaire" type="number" class="a-pu" value="${a.pu||''}">
+    <button type="button" class="dyn-remove">✕</button>
+  </div>`;
+}
+function paiementRowHtml(p={}){
+  return `<div class="dyn-row pay pay-row">
+    <select class="p-type"><option ${p.type==='Acompte'?'selected':''}>Acompte</option><option ${p.type==='Solde'?'selected':''}>Solde</option></select>
+    <input placeholder="%" type="number" class="p-pct" value="${p.pct||''}">
+    <select class="p-base">
+      <option value="commande" ${p.base==='commande'?'selected':''}>À la commande</option>
+      <option value="etd" ${p.base==='etd'?'selected':''}>ETD</option>
+      <option value="bl" ${p.base==='bl'?'selected':''}>BL</option>
+      <option value="eta" ${p.base==='eta'?'selected':''}>ETA</option>
+      <option value="ata" ${p.base==='ata'?'selected':''}>ATA</option>
+    </select>
+    <input placeholder="Délai (j)" type="number" class="p-delai" value="${p.delai||0}">
+    <input type="date" class="p-dateBase" value="${p.dateBase||''}" title="Date de commande (si base = commande)">
+    <button type="button" class="dyn-remove">✕</button>
+  </div>`;
+}
+
+/* ---- Nouveau / Modifier dossier (Achats) ---- */
+function openDossierForm(existing){
+  const d = existing || { ref:'IMP-2026-' + String(1000+cache.dossiers.length).slice(-4), fournisseur:'', pays:'', incoterm:'FOB', devise:'USD', tauxPrev:'', articles:[{}], transport:{mode:'Maritime'}, milestones:{}, frais:{}, paiements:[{}] };
+  const html = `
+    <h2>${existing?'Modifier le dossier':"Nouveau dossier d'importation"}</h2>
+    <div class="modal-sub">${existing?d.ref:'Une référence est générée automatiquement, modifiable si besoin.'}</div>
+    <form id="dossierForm">
+      <div class="modal-section">
+        <div class="sec-title">Informations générales</div>
+        <div class="form-grid">
+          <div><label>Référence dossier</label><input id="f-ref" value="${d.ref}" ${existing?'readonly':''} required></div>
+          <div><label>Fournisseur</label><input id="f-fournisseur" value="${d.fournisseur}" required></div>
+          <div><label>Pays</label><input id="f-pays" value="${d.pays||''}"></div>
+          <div><label>Incoterm</label><select id="f-incoterm">
+            ${['FOB','CIF','CFR','EXW','FCA','DAP'].map(i=>`<option ${d.incoterm===i?'selected':''}>${i}</option>`).join('')}
+          </select></div>
+          <div><label>Devise</label><select id="f-devise">${['USD','EUR','TND'].map(c=>`<option ${d.devise===c?'selected':''}>${c}</option>`).join('')}</select></div>
+          <div><label>Taux de change prévisionnel</label><input id="f-taux" type="number" step="0.01" value="${d.tauxPrev??''}"></div>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="sec-title">Lignes de commande (articles)</div>
+        <div id="articlesList">${(d.articles.length?d.articles:[{}]).map(articleRowHtml).join('')}</div>
+        <button type="button" class="btn ghost" id="addArticle">+ Ajouter un article</button>
+      </div>
+      <div class="modal-section">
+        <div class="sec-title">Transport &amp; jalons prévisionnels</div>
+        <div class="form-grid cols2">
+          <div><label>Mode de transport</label><select id="f-mode">${['Maritime','Aérien','Terrestre'].map(m=>`<option ${d.transport?.mode===m?'selected':''}>${m}</option>`).join('')}</select></div>
+          <div><label>N° BL / LTA</label><input id="f-bl" value="${d.transport?.bl||''}"></div>
+          <div><label>Navire / Vol</label><input id="f-navire" value="${d.transport?.navire||''}"></div>
+          <div><label>Conteneurs (séparés par virgule)</label><input id="f-conteneurs" value="${(d.transport?.conteneurs||[]).join(', ')}"></div>
+          <div><label>ETD prévisionnel</label><input type="date" id="f-etd" value="${d.milestones?.etd||''}"></div>
+          <div><label>ETA prévisionnel</label><input type="date" id="f-eta" value="${d.milestones?.eta||''}"></div>
+          <div><label>Dédouanement prévisionnel</label><input type="date" id="f-dedouanement" value="${d.milestones?.dedouanementPrev||''}"></div>
+          <div><label>Livraison usine prévisionnelle</label><input type="date" id="f-livraison" value="${d.milestones?.livraisonPrev||''}"></div>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="sec-title">Frais annexes estimés (TND)</div>
+        <div class="frais-grid">
+          ${Object.entries(FRAIS_LABELS).map(([k,label])=>`<div><label>${label}</label><input type="number" class="f-frais" data-type="${k}" value="${d.frais?.[k]?.est ?? d.frais?.[k] ?? 0}"></div>`).join('')}
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="sec-title">Modalités de paiement</div>
+        <div id="paiementsList">${(d.paiements.length?d.paiements:[{}]).map(paiementRowHtml).join('')}</div>
+        <button type="button" class="btn ghost" id="addPaiement">+ Ajouter une échéance</button>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="cancelModal">Annuler</button>
+        <button type="submit" class="btn primary">${existing?'Enregistrer les modifications':'Créer le dossier'}</button>
+      </div>
+    </form>`;
+  openModal(html);
+
+  document.getElementById('addArticle').onclick = ()=> document.getElementById('articlesList').insertAdjacentHTML('beforeend', articleRowHtml());
+  document.getElementById('addPaiement').onclick = ()=> document.getElementById('paiementsList').insertAdjacentHTML('beforeend', paiementRowHtml());
+  document.getElementById('modalRoot').addEventListener('click', e=>{ if(e.target.classList.contains('dyn-remove')) e.target.closest('.dyn-row').remove(); });
+  document.getElementById('cancelModal').onclick = closeModal;
+
+  document.getElementById('dossierForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const articles = [...document.querySelectorAll('.article-row')].map(r=>({
+      designation: r.querySelector('.a-designation').value, qte: r.querySelector('.a-qte').value, pu: r.querySelector('.a-pu').value,
+    })).filter(a=>a.designation);
+    const paiements = [...document.querySelectorAll('.pay-row')].map(r=>({
+      type: r.querySelector('.p-type').value, pct: r.querySelector('.p-pct').value, base: r.querySelector('.p-base').value,
+      delai: r.querySelector('.p-delai').value, dateBase: r.querySelector('.p-dateBase').value || null,
+    }));
+    const frais = {};
+    document.querySelectorAll('.f-frais').forEach(inp=>{ frais[inp.dataset.type] = Number(inp.value)||0; });
+
+    const payload = {
+      ref: document.getElementById('f-ref').value,
+      fournisseur: document.getElementById('f-fournisseur').value,
+      pays: document.getElementById('f-pays').value,
+      incoterm: document.getElementById('f-incoterm').value,
+      devise: document.getElementById('f-devise').value,
+      tauxPrev: Number(document.getElementById('f-taux').value)||null,
+      articles,
+      transport: {
+        mode: document.getElementById('f-mode').value, bl: document.getElementById('f-bl').value,
+        navire: document.getElementById('f-navire').value, conteneurs: document.getElementById('f-conteneurs').value,
+      },
+      milestones: {
+        etd: document.getElementById('f-etd').value || null, eta: document.getElementById('f-eta').value || null,
+        dedouanementPrev: document.getElementById('f-dedouanement').value || null, livraisonPrev: document.getElementById('f-livraison').value || null,
+      },
+      frais, paiements,
+    };
+    try{
+      if(existing) await api(`/dossiers/${existing.id}`, { method:'PUT', body: JSON.stringify(payload) });
+      else await api('/dossiers', { method:'POST', body: JSON.stringify(payload) });
+      closeModal(); toast(existing?'Dossier mis à jour.':'Dossier créé.'); await refresh();
+    }catch(err){ toast(err.message, true); }
+  });
+}
+
+/* ---- Mise à jour Logistique ---- */
+function openLogistiqueForm(d){
+  const html = `
+    <h2>Mise à jour logistique — ${d.ref}</h2>
+    <div class="modal-sub">${d.fournisseur}</div>
+    <form id="logForm">
+      <div class="modal-section">
+        <div class="form-grid cols2">
+          <div><label>Mode de transport</label><select id="l-mode">${['Maritime','Aérien','Terrestre'].map(m=>`<option ${d.transport.mode===m?'selected':''}>${m}</option>`).join('')}</select></div>
+          <div><label>N° BL / LTA</label><input id="l-bl" value="${d.transport.bl||''}"></div>
+          <div><label>Navire / Vol</label><input id="l-navire" value="${d.transport.navire||''}"></div>
+          <div><label>Conteneurs</label><input id="l-conteneurs" value="${d.transport.conteneurs.join(', ')}"></div>
+          <div><label>ATD (départ réel)</label><input type="date" id="l-atd" value="${d.milestones.atd||''}"></div>
+          <div><label>ETA prévisionnel</label><input type="date" id="l-eta" value="${d.milestones.eta||''}"></div>
+          <div><label>ATA (arrivée réelle)</label><input type="date" id="l-ata" value="${d.milestones.ata||''}"></div>
+          <div><label>Dédouanement réel</label><input type="date" id="l-dedouanement" value="${d.milestones.dedouanementReel||''}"></div>
+          <div><label>Livraison usine réelle</label><input type="date" id="l-livraison" value="${d.milestones.livraisonReel||''}"></div>
+          <div><label>Statut du dossier</label><select id="l-statut">${Object.entries(STATUTS).map(([k,v])=>`<option value="${k}" ${d.statut===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+        </div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn" id="cancelModal">Annuler</button><button type="submit" class="btn primary">Enregistrer</button></div>
+    </form>`;
+  openModal(html);
+  document.getElementById('cancelModal').onclick = closeModal;
+  document.getElementById('logForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const payload = {
+      transport: { mode: document.getElementById('l-mode').value, bl: document.getElementById('l-bl').value, navire: document.getElementById('l-navire').value, conteneurs: document.getElementById('l-conteneurs').value },
+      milestones: { atd: document.getElementById('l-atd').value||null, eta: document.getElementById('l-eta').value||null, ata: document.getElementById('l-ata').value||null,
+        dedouanement_reel: document.getElementById('l-dedouanement').value||null, livraison_reel: document.getElementById('l-livraison').value||null },
+      statut: document.getElementById('l-statut').value,
+    };
+    try{ await api(`/dossiers/${d.id}/logistique`, { method:'PUT', body: JSON.stringify(payload) }); closeModal(); toast('Suivi logistique mis à jour.'); await refresh(); }
+    catch(err){ toast(err.message, true); }
+  });
+}
+
+/* ---- Saisie Finance (frais réels) ---- */
+function openFinanceForm(d){
+  const html = `
+    <h2>Saisie des frais réels — ${d.ref}</h2>
+    <div class="modal-sub">${d.fournisseur}</div>
+    <form id="finForm">
+      <div class="modal-section">
+        <div class="frais-grid">
+          ${Object.entries(FRAIS_LABELS).map(([k,label])=>`<div><label>${label} (réel)</label><input type="number" class="fin-frais" data-type="${k}" value="${d.frais[k]?.reel ?? ''}"></div>`).join('')}
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="form-grid cols2">
+          <div><label>Taux de change réel</label><input type="number" step="0.01" id="fin-taux" value="${d.tauxReel??''}"></div>
+          <div><label>Statut du dossier</label><select id="fin-statut">${Object.entries(STATUTS).map(([k,v])=>`<option value="${k}" ${d.statut===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+        </div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn" id="cancelModal">Annuler</button><button type="submit" class="btn primary">Enregistrer</button></div>
+    </form>`;
+  openModal(html);
+  document.getElementById('cancelModal').onclick = closeModal;
+  document.getElementById('finForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const frais = {};
+    document.querySelectorAll('.fin-frais').forEach(inp=>{
+      const v = inp.value; frais[inp.dataset.type] = { est: d.frais[inp.dataset.type]?.est ?? 0, reel: v===''?null:Number(v) };
+    });
+    const payload = { frais, tauxReel: document.getElementById('fin-taux').value ? Number(document.getElementById('fin-taux').value) : null, statut: document.getElementById('fin-statut').value };
+    try{ await api(`/dossiers/${d.id}/finance`, { method:'PUT', body: JSON.stringify(payload) }); closeModal(); toast('Frais réels enregistrés.'); await refresh(); }
+    catch(err){ toast(err.message, true); }
+  });
+}
+
+/* ---- Nouvel utilisateur ---- */
+function openUserForm(){
+  const html = `
+    <h2>Nouvel utilisateur</h2>
+    <form id="userForm">
+      <div class="modal-section form-grid cols2">
+        <div><label>Nom</label><input id="u-nom" required></div>
+        <div><label>Email</label><input id="u-email" type="email" required></div>
+        <div><label>Mot de passe</label><input id="u-password" type="password" required></div>
+        <div><label>Rôle</label><select id="u-role">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+        <div><label>Service</label><input id="u-service"></div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn" id="cancelModal">Annuler</button><button type="submit" class="btn primary">Créer</button></div>
+    </form>`;
+  openModal(html);
+  document.getElementById('cancelModal').onclick = closeModal;
+  document.getElementById('userForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const payload = { nom:document.getElementById('u-nom').value, email:document.getElementById('u-email').value, password:document.getElementById('u-password').value, role:document.getElementById('u-role').value, service:document.getElementById('u-service').value };
+    try{ await api('/users', { method:'POST', body: JSON.stringify(payload) }); closeModal(); toast('Utilisateur créé.'); await refresh(); }
+    catch(err){ toast(err.message, true); }
+  });
+}
+
+/* ---------------- CONTENT HANDLERS ---------------- */
+function attachContentHandlers(){
+  const newBtn = document.getElementById('newDossierBtn');
+  if(newBtn) newBtn.onclick = ()=> openDossierForm(null);
+
+  document.querySelectorAll('[data-edit-achats]').forEach(b=>{
+    b.onclick = ()=> openDossierForm(cache.dossiers.find(d=>d.id==b.dataset.editAchats));
+  });
+  document.querySelectorAll('[data-edit-logistique]').forEach(b=>{
+    b.onclick = ()=> openLogistiqueForm(cache.dossiers.find(d=>d.id==b.dataset.editLogistique));
+  });
+  document.querySelectorAll('[data-edit-finance]').forEach(b=>{
+    b.onclick = ()=> openFinanceForm(cache.dossiers.find(d=>d.id==b.dataset.editFinance));
+  });
+  document.querySelectorAll('[data-pdf]').forEach(b=>{
+    b.onclick = ()=> downloadFile(`/exports/dossiers/${b.dataset.pdf}/pdf`, `${cache.dossiers.find(d=>d.id==b.dataset.pdf).ref}.pdf`);
+  });
+  document.querySelectorAll('[data-simulate-delay]').forEach(b=>{
+    b.onclick = async ()=>{ try{ await api(`/dossiers/${b.dataset.simulateDelay}/logistique/simuler-retard`, {method:'POST', body: JSON.stringify({jours:5})}); toast('ETA retardé de 5 jours — trésorerie recalculée.'); await refresh(); }catch(err){ toast(err.message, true); } };
+  });
+  document.querySelectorAll('[data-reset-delay]').forEach(b=>{
+    b.onclick = async ()=>{ try{ await api(`/dossiers/${b.dataset.resetDelay}/logistique/reinitialiser-eta`, {method:'POST'}); toast('ETA réinitialisé.'); await refresh(); }catch(err){ toast(err.message, true); } };
+  });
+  document.querySelectorAll('[data-fmode]').forEach(b=>{
+    b.onclick = ()=>{ financeMode=b.dataset.fmode; document.getElementById('content').innerHTML = pageContent(); attachContentHandlers(); };
+  });
+  const fSel = document.getElementById('financeDossierSelect');
+  if(fSel) fSel.onchange = e=>{ financeSelected = Number(e.target.value); document.getElementById('content').innerHTML = pageContent(); attachContentHandlers(); };
+
+  const newUserBtn = document.getElementById('newUserBtn');
+  if(newUserBtn) newUserBtn.onclick = openUserForm;
+
+  const exportTresorerie = document.getElementById('exportTresorerieXlsx');
+  if(exportTresorerie) exportTresorerie.onclick = ()=> downloadFile('/exports/tresorerie/excel', 'echeancier-tresorerie.xlsx');
+  const exportDossiers = document.getElementById('exportDossiersXlsx');
+  if(exportDossiers) exportDossiers.onclick = ()=> downloadFile('/exports/dossiers/excel', 'dossiers-import.xlsx');
+}
+
+/* ---------------- BOOT ---------------- */
+renderRoot();
+</script>
+</body>
+</html>
