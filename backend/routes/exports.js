@@ -80,6 +80,112 @@ router.get('/dossiers/excel', async (req, res) => {
   res.end();
 });
 
+// ---- EXCEL : coût de revient détaillé d'un dossier (estimé vs réel, par article) ----
+router.get('/dossiers/:id/cout-revient/excel', async (req, res) => {
+  const d = logic.assembleDossier(req.params.id);
+  if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
+
+  const itemsEst = logic.landedCost(d, 'est');
+  const itemsReel = logic.landedCost(d, 'reel');
+  const totalFraisEst = logic.fraisTotal(d, 'est');
+  const totalFraisReel = logic.fraisTotal(d, 'reel');
+  const totalVal = logic.valeurMarchandise(d);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ESCALE';
+  wb.created = new Date();
+  const sheet = wb.addWorksheet('Coût de revient');
+
+  // En-tête récapitulatif du dossier
+  sheet.mergeCells('A1:J1');
+  sheet.getCell('A1').value = `Coût de revient — ${d.ref} — ${d.fournisseur}`;
+  sheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF134E45' } };
+
+  sheet.getCell('A3').value = 'Incoterm';
+  sheet.getCell('B3').value = d.incoterm;
+  sheet.getCell('C3').value = 'Devise';
+  sheet.getCell('D3').value = d.devise;
+  sheet.getCell('E3').value = 'Taux prévisionnel';
+  sheet.getCell('F3').value = d.tauxPrev ?? '—';
+  sheet.getCell('G3').value = 'Taux réel';
+  sheet.getCell('H3').value = d.tauxReel ?? '—';
+  sheet.getRow(3).font = { bold: false };
+  ['A3', 'C3', 'E3', 'G3'].forEach(c => { sheet.getCell(c).font = { bold: true, color: { argb: 'FF5B6B62' }, size: 10 }; });
+
+  // Tableau des postes de frais annexes
+  sheet.getCell('A5').value = 'Frais annexes (TND)';
+  sheet.getCell('A5').font = { bold: true, color: { argb: 'FF134E45' } };
+  const fraisHeaderRow = sheet.getRow(6);
+  ['Poste', 'Estimé', 'Réel', 'Écart'].forEach((h, i) => { fraisHeaderRow.getCell(1 + i).value = h; });
+  fraisHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  fraisHeaderRow.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } }; });
+  let r = 7;
+  Object.entries(d.frais).forEach(([type, f]) => {
+    const row = sheet.getRow(r++);
+    row.getCell(1).value = logic.FRAIS_LABELS[type] || type;
+    row.getCell(2).value = f.est;
+    row.getCell(3).value = f.reel ?? null;
+    row.getCell(4).value = f.reel != null ? f.reel - f.est : null;
+  });
+  const totalFraisRow = sheet.getRow(r);
+  totalFraisRow.getCell(1).value = 'Total frais annexes';
+  totalFraisRow.getCell(2).value = totalFraisEst;
+  totalFraisRow.getCell(3).value = totalFraisReel;
+  totalFraisRow.font = { bold: true };
+  r += 2;
+
+  // Tableau détaillé par article : coût estimé vs réel, coût unitaire (par pièce)
+  sheet.getCell(`A${r}`).value = 'Coût de revient par article (Landed Cost)';
+  sheet.getCell(`A${r}`).font = { bold: true, color: { argb: 'FF134E45' } };
+  r += 1;
+  const tableHeaderRowIdx = r;
+  const headers = [
+    'Article', 'Qté', `PU (${d.devise})`, `Valeur (${d.devise})`,
+    'Frais alloués — estimé (TND)', 'Frais alloués — réel (TND)',
+    'Coût de revient — estimé (TND)', 'Coût de revient — réel (TND)',
+    'Coût par pièce — estimé (TND)', 'Coût par pièce — réel (TND)',
+  ];
+  const headerRow = sheet.getRow(tableHeaderRowIdx);
+  headers.forEach((h, i) => { headerRow.getCell(1 + i).value = h; });
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } }; });
+  r += 1;
+
+  itemsEst.forEach((a, i) => {
+    const ar = itemsReel[i];
+    const row = sheet.getRow(r++);
+    row.getCell(1).value = a.designation;
+    row.getCell(2).value = a.qte;
+    row.getCell(3).value = a.pu;
+    row.getCell(4).value = Math.round(a.valeur);
+    row.getCell(5).value = Math.round(a.fraisAlloc);
+    row.getCell(6).value = Math.round(ar.fraisAlloc);
+    row.getCell(7).value = Math.round(a.coutRevientLocal);
+    row.getCell(8).value = Math.round(ar.coutRevientLocal);
+    row.getCell(9).value = Number(a.coutUnitaireLocal.toFixed(2));
+    row.getCell(10).value = Number(ar.coutUnitaireLocal.toFixed(2));
+  });
+  const totalRow = sheet.getRow(r);
+  totalRow.getCell(1).value = 'Total';
+  totalRow.getCell(4).value = Math.round(totalVal);
+  totalRow.getCell(5).value = Math.round(totalFraisEst);
+  totalRow.getCell(6).value = Math.round(totalFraisReel);
+  totalRow.getCell(7).value = Math.round(itemsEst.reduce((s, a) => s + a.coutRevientLocal, 0));
+  totalRow.getCell(8).value = Math.round(itemsReel.reduce((s, a) => s + a.coutRevientLocal, 0));
+  totalRow.font = { bold: true };
+
+  sheet.columns = [
+    { width: 30 }, { width: 10 }, { width: 12 }, { width: 14 },
+    { width: 22 }, { width: 20 }, { width: 24 }, { width: 22 },
+    { width: 22 }, { width: 20 },
+  ];
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${d.ref}-cout-de-revient.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
 // ---- PDF : fiche dossier (landed cost + jalons) ----
 router.get('/dossiers/:id/pdf', (req, res) => {
   const d = logic.assembleDossier(req.params.id);

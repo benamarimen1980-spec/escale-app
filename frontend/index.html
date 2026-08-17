@@ -267,11 +267,11 @@ async function loadAll(){
 async function refresh(){ await loadAll(); renderRoot(); }
 
 /* ---------------- ROLES / NAV ---------------- */
-const ROLE_LABELS = { admin:'Admin / Direction', achats:'Service Achats', logistique:'Service Logistique', finance:'Comptabilité / Finance' };
+const ROLE_LABELS = { admin:'Admin / Direction', achats:'Service Achats', logistique:'Service Logistique', achats_logistique:'Achats & Logistique', finance:'Comptabilité / Finance' };
 const NAV_ITEMS = [
-  {id:'dashboard', label:'Dashboard', icon:'grid', roles:['admin','achats','logistique','finance']},
-  {id:'achats', label:'Dossiers & Achats', icon:'box', roles:['admin','achats']},
-  {id:'logistique', label:'Logistique', icon:'ship', roles:['admin','logistique']},
+  {id:'dashboard', label:'Dashboard', icon:'grid', roles:['admin','achats','logistique','achats_logistique','finance']},
+  {id:'achats', label:'Dossiers & Achats', icon:'box', roles:['admin','achats','achats_logistique']},
+  {id:'logistique', label:'Logistique', icon:'ship', roles:['admin','logistique','achats_logistique']},
   {id:'finance', label:'Finance & Coût de revient', icon:'calc', roles:['admin','finance']},
   {id:'tresorerie', label:'Trésorerie', icon:'cash', roles:['admin','finance']},
   {id:'utilisateurs', label:'Utilisateurs', icon:'users', roles:['admin']},
@@ -304,13 +304,46 @@ const TITLES = {
 /* ---------------- ROOT RENDER ---------------- */
 function renderRoot(){
   const root = document.getElementById('root');
-  if(!session){ root.innerHTML = loginScreen(); attachLoginHandlers(); return; }
+  if(!session){ root.innerHTML = loginScreen({mode:'login'}); attachLoginHandlers('login'); return; }
   root.innerHTML = appShell();
   attachShellHandlers();
 }
 
 /* ---------------- LOGIN SCREEN ---------------- */
-function loginScreen(errorMsg){
+const ROLE_LABELS_SIGNUP = { achats:'Service Achats', logistique:'Service Logistique', achats_logistique:'Achats & Logistique', finance:'Comptabilité / Finance' };
+
+function loginScreen(opts){
+  opts = opts || {};
+  const mode = opts.mode || 'login';
+  const errorMsg = opts.errorMsg;
+  const successMsg = opts.successMsg;
+
+  if(mode === 'register'){
+    return `
+    <div class="login-screen">
+      <div class="login-card">
+        <div class="login-brand">
+          <div class="brand-mark">E</div>
+          <div><div class="name">ESCALE</div><div class="tag">Import &amp; Trésorerie</div></div>
+        </div>
+        <h2>Créer un compte</h2>
+        <div class="sub">Votre demande devra être validée par un administrateur avant de pouvoir vous connecter.</div>
+        ${errorMsg ? `<div class="login-error">${errorMsg}</div>` : ''}
+        <form id="registerForm">
+          <div class="field"><label>Nom complet</label><input id="regNom" required placeholder="Prénom Nom"></div>
+          <div class="field"><label>Email</label><input type="email" id="regEmail" required placeholder="prenom@entreprise.tn"></div>
+          <div class="field"><label>Mot de passe</label><input type="password" id="regPassword" required placeholder="6 caractères minimum"></div>
+          <div class="field"><label>Rôle souhaité</label><select id="regRole">${Object.entries(ROLE_LABELS_SIGNUP).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div class="field"><label>Service (optionnel)</label><input id="regService" placeholder="ex. Achats & Approvisionnement"></div>
+          <button class="btn primary" type="submit" style="width:100%;">Envoyer ma demande</button>
+        </form>
+        <div class="demo-accounts">
+          <button class="btn ghost" id="toLoginBtn" type="button">← Déjà un compte ? Se connecter</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
   return `
   <div class="login-screen">
     <div class="login-card">
@@ -321,36 +354,50 @@ function loginScreen(errorMsg){
       <h2>Connexion</h2>
       <div class="sub">Authentifiez-vous pour accéder à votre espace de travail.</div>
       ${errorMsg ? `<div class="login-error">${errorMsg}</div>` : ''}
+      ${successMsg ? `<div class="login-error" style="background:var(--teal-tint);color:var(--teal-dark);">${successMsg}</div>` : ''}
       <form id="loginForm">
-        <div class="field"><label>Email</label><input type="email" id="loginEmail" required placeholder="prenom@escale.tn"></div>
+        <div class="field"><label>Email</label><input type="email" id="loginEmail" required placeholder="prenom@entreprise.tn"></div>
         <div class="field"><label>Mot de passe</label><input type="password" id="loginPassword" required placeholder="••••••••"></div>
         <button class="btn primary" type="submit" style="width:100%;">Se connecter</button>
       </form>
       <div class="demo-accounts">
-        <div class="t">Comptes de démonstration (mot de passe : demo1234)</div>
-        <button class="demo-chip" data-demo="admin@escale.tn">admin@escale.tn</button>
-        <button class="demo-chip" data-demo="achats@escale.tn">achats@escale.tn</button>
-        <button class="demo-chip" data-demo="logistique@escale.tn">logistique@escale.tn</button>
-        <button class="demo-chip" data-demo="finance@escale.tn">finance@escale.tn</button>
+        <button class="btn ghost" id="toRegisterBtn" type="button">Pas encore de compte ? Créer un compte →</button>
       </div>
     </div>
   </div>`;
 }
 
-function attachLoginHandlers(){
+function attachLoginHandlers(mode){
+  if(mode === 'register'){
+    document.getElementById('toLoginBtn').onclick = ()=>{ document.getElementById('root').innerHTML = loginScreen({mode:'login'}); attachLoginHandlers('login'); };
+    document.getElementById('registerForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const payload = {
+        nom: document.getElementById('regNom').value,
+        email: document.getElementById('regEmail').value,
+        password: document.getElementById('regPassword').value,
+        role: document.getElementById('regRole').value,
+        service: document.getElementById('regService').value,
+      };
+      try{
+        const data = await api('/auth/register', { method:'POST', body: JSON.stringify(payload) });
+        document.getElementById('root').innerHTML = loginScreen({mode:'login', successMsg: data.message});
+        attachLoginHandlers('login');
+      }catch(err){
+        document.getElementById('root').innerHTML = loginScreen({mode:'register', errorMsg: err.message});
+        attachLoginHandlers('register');
+      }
+    });
+    return;
+  }
   document.getElementById('loginForm').addEventListener('submit', async e=>{
     e.preventDefault();
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
     try{ await login(email, password); }
-    catch(err){ document.getElementById('root').innerHTML = loginScreen(err.message); attachLoginHandlers(); }
+    catch(err){ document.getElementById('root').innerHTML = loginScreen({mode:'login', errorMsg: err.message}); attachLoginHandlers('login'); }
   });
-  document.querySelectorAll('[data-demo]').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      document.getElementById('loginEmail').value = b.dataset.demo;
-      document.getElementById('loginPassword').value = 'demo1234';
-    });
-  });
+  document.getElementById('toRegisterBtn').onclick = ()=>{ document.getElementById('root').innerHTML = loginScreen({mode:'register'}); attachLoginHandlers('register'); };
 }
 
 /* ---------------- APP SHELL ---------------- */
@@ -391,8 +438,8 @@ function readonlyBanner(moduleRoles){
 
 function pageContent(){
   if(currentTab==='dashboard') return pageDashboard();
-  if(currentTab==='achats') return readonlyBanner(['achats']) + pageAchats();
-  if(currentTab==='logistique') return readonlyBanner(['logistique']) + pageLogistique();
+  if(currentTab==='achats') return readonlyBanner(['achats','achats_logistique']) + pageAchats();
+  if(currentTab==='logistique') return readonlyBanner(['logistique','achats_logistique']) + pageLogistique();
   if(currentTab==='finance') return readonlyBanner(['finance']) + pageFinance();
   if(currentTab==='tresorerie') return readonlyBanner(['finance']) + pageTresorerie();
   if(currentTab==='utilisateurs') return pageUtilisateurs();
@@ -414,17 +461,20 @@ function pageDashboard(){
   const devColors = {USD:'#1E6F63', EUR:'#2E5C8A', TND:'#C9821F'};
   const windows=[30,60,90];
   const maxVal = Math.max(1,...windows.flatMap(w=>Object.values(k.byDevise[w]||{})));
+  const canSeeTreasury = ['admin','finance'].includes(session.user.role);
 
-  return `
-  <div class="kpi-grid grid">
-    <div class="kpi-card"><div class="label">Trésorerie à engager — 30 j</div>
-      <div class="value">${Object.entries(k.byDevise[30]||{}).map(([c,v])=>fmtMoney(v,c)).join(' · ') || '—'}</div></div>
-    <div class="kpi-card"><div class="label">Coût moyen fret / conteneur</div><div class="value">${fmtMoney(k.fretMoyen,'TND')}</div></div>
-    <div class="kpi-card"><div class="label">Écart moyen budget vs réel</div>
-      <div class="value ${k.ecartMoyen>0?'diff-up':'diff-down'}">${k.ecartMoyen>=0?'+':''}${k.ecartMoyen.toFixed(1)}<small>%</small></div></div>
-    <div class="kpi-card"><div class="label">Délai moyen de transit</div><div class="value">${k.leadMoyen}<small> jours</small></div></div>
-  </div>
-  <div class="two-col">
+  const alertsPanel = `
+    <div class="panel">
+      <div class="panel-head"><h2>Alertes automatiques</h2></div>
+      <div class="panel-sub">${alerts.length} alerte${alerts.length>1?'s':''} active${alerts.length>1?'s':''}</div>
+      ${alerts.length===0?'<div class="alert-empty">Aucune alerte — tous les dossiers sont dans les délais.</div>':
+        alerts.slice(0,8).map(a=>`
+        <div class="alert-row"><span class="alert-dot ${a.sev}"></span>
+          <div><div class="alert-text">${a.type==='logistique'?'🚢':a.type==='finance'?'⏳':'🚨'} <b>${a.dossierRef}</b> — ${a.text}</div></div>
+        </div>`).join('')}
+    </div>`;
+
+  const treasuryPanel = `
     <div class="panel">
       <h2>Trésorerie à engager par devise</h2>
       <div class="panel-sub">Sorties de fonds cumulées sur 30 / 60 / 90 jours, par devise de règlement</div>
@@ -440,17 +490,18 @@ function pageDashboard(){
         }).join('')}
       </div>
       <div class="legend">${Object.entries(devColors).map(([c,col])=>`<div class="legend-item"><span class="legend-swatch" style="background:${col}"></span>${c}</div>`).join('')}</div>
-    </div>
-    <div class="panel">
-      <div class="panel-head"><h2>Alertes automatiques</h2></div>
-      <div class="panel-sub">${alerts.length} alerte${alerts.length>1?'s':''} active${alerts.length>1?'s':''}</div>
-      ${alerts.length===0?'<div class="alert-empty">Aucune alerte — tous les dossiers sont dans les délais.</div>':
-        alerts.slice(0,8).map(a=>`
-        <div class="alert-row"><span class="alert-dot ${a.sev}"></span>
-          <div><div class="alert-text">${a.type==='logistique'?'🚢':a.type==='finance'?'⏳':'🚨'} <b>${a.dossierRef}</b> — ${a.text}</div></div>
-        </div>`).join('')}
-    </div>
+    </div>`;
+
+  return `
+  <div class="kpi-grid grid">
+    ${canSeeTreasury ? `<div class="kpi-card"><div class="label">Trésorerie à engager — 30 j</div>
+      <div class="value">${Object.entries(k.byDevise[30]||{}).map(([c,v])=>fmtMoney(v,c)).join(' · ') || '—'}</div></div>` : ''}
+    <div class="kpi-card"><div class="label">Coût moyen fret / conteneur</div><div class="value">${fmtMoney(k.fretMoyen,'TND')}</div></div>
+    <div class="kpi-card"><div class="label">Écart moyen budget vs réel</div>
+      <div class="value ${k.ecartMoyen>0?'diff-up':'diff-down'}">${k.ecartMoyen>=0?'+':''}${k.ecartMoyen.toFixed(1)}<small>%</small></div></div>
+    <div class="kpi-card"><div class="label">Délai moyen de transit</div><div class="value">${k.leadMoyen}<small> jours</small></div></div>
   </div>
+  ${canSeeTreasury ? `<div class="two-col">${treasuryPanel}${alertsPanel}</div>` : alertsPanel}
   <div class="panel">
     <div class="panel-head"><h2>Dossiers en cours</h2>
       <button class="btn small" id="exportDossiersXlsx">⬇ Exporter (Excel)</button>
@@ -468,7 +519,7 @@ function pageDashboard(){
 
 /* ---------------- ACHATS ---------------- */
 function pageAchats(){
-  const canEdit = ['admin','achats'].includes(session.user.role);
+  const canEdit = ['admin','achats','achats_logistique'].includes(session.user.role);
   return `
   <div class="panel-head" style="margin-bottom:14px;"><div></div>
     ${canEdit?`<button class="btn primary" id="newDossierBtn">+ Nouveau dossier d'importation</button>`:''}
@@ -501,7 +552,7 @@ function pageAchats(){
 
 /* ---------------- LOGISTIQUE ---------------- */
 function pageLogistique(){
-  const canEdit = ['admin','logistique'].includes(session.user.role);
+  const canEdit = ['admin','logistique','achats_logistique'].includes(session.user.role);
   return `<div class="dossier-list">
   ${cache.dossiers.map(d=>{
     const m = d.milestones;
@@ -571,6 +622,7 @@ function pageFinance(){
       <button data-fmode="est" class="${financeMode==='est'?'active':''}">Coût estimé</button>
       <button data-fmode="reel" class="${financeMode==='reel'?'active':''}">Coût réel</button>
     </div>
+    <button class="btn small" data-export-dossier-excel="${d.id}" style="margin-bottom:16px;margin-left:8px;">⬇ Export Excel (estimé + réel, par article)</button>
     <table><thead><tr><th class="txt">Article</th><th>Qté</th><th>Valeur (${d.devise})</th><th>Frais alloués (TND)</th><th>Coût de revient (TND)</th><th>Coût unitaire (TND)</th></tr></thead>
       <tbody>${items.map(a=>`<tr><td class="txt">${a.designation}</td><td>${a.qte}</td><td>${a.valeur.toLocaleString('fr-FR')}</td>
         <td>${Math.round(a.fraisAlloc).toLocaleString('fr-FR')}</td><td>${Math.round(a.coutRevientLocal).toLocaleString('fr-FR')}</td><td>${a.coutUnitaireLocal.toFixed(2)}</td></tr>`).join('')}
@@ -631,12 +683,29 @@ function pageTresorerie(){
 
 /* ---------------- UTILISATEURS ---------------- */
 function pageUtilisateurs(){
+  const pending = cache.users.filter(u=>u.status==='pending');
+  const others = cache.users.filter(u=>u.status!=='pending');
   return `
+  ${pending.length ? `
+  <div class="panel" style="border-color:var(--amber);">
+    <div class="panel-head"><h2>⏳ Comptes en attente de validation</h2></div>
+    <div class="panel-sub">${pending.length} demande${pending.length>1?'s':''} à traiter</div>
+    <table><thead><tr><th class="txt">Nom</th><th class="txt">Email</th><th class="txt">Rôle demandé</th><th class="txt">Service</th><th></th></tr></thead>
+      <tbody>${pending.map(u=>`<tr>
+        <td class="txt">${u.nom}</td><td class="txt">${u.email}</td>
+        <td class="txt"><span class="role-chip">${ROLE_LABELS[u.role]}</span></td><td class="txt">${u.service||'—'}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn small" data-approve-user="${u.id}">✓ Approuver</button>
+          <button class="btn small" data-reject-user="${u.id}" style="color:var(--red);">✕ Refuser</button>
+        </td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div>` : ''}
   <div class="panel">
     <div class="panel-head"><h2>Utilisateurs &amp; rôles</h2><button class="btn small" id="newUserBtn">+ Nouvel utilisateur</button></div>
     <div class="panel-sub">Gestion des accès RBAC</div>
-    <table><thead><tr><th class="txt">Nom</th><th class="txt">Email</th><th class="txt">Service</th><th class="txt">Rôle</th></tr></thead>
-      <tbody>${cache.users.map(u=>`<tr><td class="txt">${u.nom}</td><td class="txt">${u.email}</td><td class="txt">${u.service||'—'}</td><td class="txt"><span class="role-chip">${ROLE_LABELS[u.role]}</span></td></tr>`).join('')}</tbody>
+    <table><thead><tr><th class="txt">Nom</th><th class="txt">Email</th><th class="txt">Service</th><th class="txt">Rôle</th><th class="txt">Statut</th><th></th></tr></thead>
+      <tbody>${others.map(u=>`<tr><td class="txt">${u.nom}</td><td class="txt">${u.email}</td><td class="txt">${u.service||'—'}</td><td class="txt"><span class="role-chip">${ROLE_LABELS[u.role]}</span></td><td class="txt">${u.status==='rejected'?'<span style="color:var(--red);">Refusé</span>':'Actif'}</td><td><button class="btn small" data-edit-user="${u.id}">✎ Modifier</button></td></tr>`).join('')}</tbody>
     </table>
   </div>
   <div class="panel">
@@ -872,6 +941,33 @@ function openUserForm(){
   });
 }
 
+function openEditUserForm(u){
+  const html = `
+    <h2>Modifier l'utilisateur</h2>
+    <div class="modal-sub">${u.nom} — ${u.email}</div>
+    <form id="editUserForm">
+      <div class="modal-section form-grid cols2">
+        <div><label>Nom</label><input id="eu-nom" value="${u.nom}" required></div>
+        <div><label>Rôle</label><select id="eu-role">${Object.entries(ROLE_LABELS).map(([k,v])=>`<option value="${k}" ${u.role===k?'selected':''}>${v}</option>`).join('')}</select></div>
+        <div><label>Service</label><input id="eu-service" value="${u.service||''}"></div>
+        <div><label>Statut</label><select id="eu-status">
+          <option value="active" ${u.status==='active'?'selected':''}>Actif</option>
+          <option value="pending" ${u.status==='pending'?'selected':''}>En attente</option>
+          <option value="rejected" ${u.status==='rejected'?'selected':''}>Refusé</option>
+        </select></div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn" id="cancelModal">Annuler</button><button type="submit" class="btn primary">Enregistrer</button></div>
+    </form>`;
+  openModal(html);
+  document.getElementById('cancelModal').onclick = closeModal;
+  document.getElementById('editUserForm').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const payload = { nom:document.getElementById('eu-nom').value, role:document.getElementById('eu-role').value, service:document.getElementById('eu-service').value, status:document.getElementById('eu-status').value };
+    try{ await api(`/users/${u.id}`, { method:'PUT', body: JSON.stringify(payload) }); closeModal(); toast('Utilisateur mis à jour.'); await refresh(); }
+    catch(err){ toast(err.message, true); }
+  });
+}
+
 /* ---------------- CONTENT HANDLERS ---------------- */
 function attachContentHandlers(){
   const newBtn = document.getElementById('newDossierBtn');
@@ -888,6 +984,21 @@ function attachContentHandlers(){
   });
   document.querySelectorAll('[data-pdf]').forEach(b=>{
     b.onclick = ()=> downloadFile(`/exports/dossiers/${b.dataset.pdf}/pdf`, `${cache.dossiers.find(d=>d.id==b.dataset.pdf).ref}.pdf`);
+  });
+  document.querySelectorAll('[data-export-dossier-excel]').forEach(b=>{
+    b.onclick = ()=> {
+      const dos = cache.dossiers.find(d=>d.id==b.dataset.exportDossierExcel);
+      downloadFile(`/exports/dossiers/${b.dataset.exportDossierExcel}/cout-revient/excel`, `${dos.ref}-cout-de-revient.xlsx`);
+    };
+  });
+  document.querySelectorAll('[data-edit-user]').forEach(b=>{
+    b.onclick = ()=> openEditUserForm(cache.users.find(u=>u.id==b.dataset.editUser));
+  });
+  document.querySelectorAll('[data-approve-user]').forEach(b=>{
+    b.onclick = async ()=>{ try{ await api(`/users/${b.dataset.approveUser}/approve`, {method:'POST'}); toast('Compte approuvé.'); await refresh(); }catch(err){ toast(err.message, true); } };
+  });
+  document.querySelectorAll('[data-reject-user]').forEach(b=>{
+    b.onclick = async ()=>{ try{ await api(`/users/${b.dataset.rejectUser}/reject`, {method:'POST'}); toast('Compte refusé.'); await refresh(); }catch(err){ toast(err.message, true); } };
   });
   document.querySelectorAll('[data-simulate-delay]').forEach(b=>{
     b.onclick = async ()=>{ try{ await api(`/dossiers/${b.dataset.simulateDelay}/logistique/simuler-retard`, {method:'POST', body: JSON.stringify({jours:5})}); toast('ETA retardé de 5 jours — trésorerie recalculée.'); await refresh(); }catch(err){ toast(err.message, true); } };

@@ -34,6 +34,4 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`ESCALE en écoute sur le port ${PORT}`);
-  console.log('Comptes de démonstration (mot de passe : demo1234) :');
-  console.log('  admin@escale.tn · achats@escale.tn · logistique@escale.tn · finance@escale.tn');
 });
