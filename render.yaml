@@ -15,3 +15,5 @@ services:
         sync: false
       - key: ADMIN_NOM
         sync: false
+      - key: DATABASE_URL
+        sync: false

@@ -1,203 +1,104 @@
 const express = require('express');
-const db = require('../db');
+const { query } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const logic = require('../logic');
+const data = require('../data');
 
 const router = express.Router();
 router.use(requireAuth);
 
-function logAction(req, action, entity, entityId, details) {
-  db.prepare(`INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id,details) VALUES (?,?,?,?,?,?)`)
-    .run(req.user.id, req.user.nom, action, entity, entityId ?? null, details ?? null);
+async function logAction(req, action, entityId, details) {
+  await query('INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id,details) VALUES ($1,$2,$3,$4,$5,$6)',
+    [req.user.id, req.user.nom, action, 'dossier', entityId || null, details || null]);
 }
 
-// ---- LIST / DETAIL (all roles, read) ----
-router.get('/', (req, res) => {
-  res.json({ dossiers: logic.listDossiers() });
+router.get('/', async (req, res) => {
+  try { res.json({ dossiers: await data.listDossiers() }); }
+  catch (e) { console.error(e); res.status(500).json({ error: 'Erreur serveur.' }); }
 });
 
-router.get('/:id', (req, res) => {
-  const d = logic.assembleDossier(req.params.id);
+router.get('/:id', async (req, res) => {
+  const d = await data.assembleDossier(req.params.id);
   if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
   res.json({ dossier: d });
 });
 
-// ---- CREATE (Achats / Admin) ----
-router.post('/', requireRole('achats'), (req, res) => {
+router.post('/', requireRole('achats'), async (req, res) => {
   const b = req.body || {};
   if (!b.ref || !b.fournisseur || !b.incoterm || !b.devise) {
     return res.status(400).json({ error: 'Champs requis manquants (référence, fournisseur, incoterm, devise).' });
   }
-  const exists = db.prepare('SELECT id FROM dossiers WHERE ref=?').get(b.ref);
-  if (exists) return res.status(409).json({ error: `La référence ${b.ref} existe déjà.` });
-
-  const tx = db.transaction(() => {
-    const info = db.prepare(`
-      INSERT INTO dossiers (ref,fournisseur,pays,incoterm,devise,devise_frais,taux_prev,taux_reel,statut,created_by)
-      VALUES (@ref,@fournisseur,@pays,@incoterm,@devise,@devise_frais,@taux_prev,@taux_reel,@statut,@created_by)
-    `).run({
-      ref: b.ref, fournisseur: b.fournisseur, pays: b.pays || null, incoterm: b.incoterm,
-      devise: b.devise, devise_frais: b.deviseFrais || 'TND', taux_prev: b.tauxPrev || null,
-      taux_reel: null, statut: 'preparation', created_by: req.user.id,
-    });
-    const dossierId = info.lastInsertRowid;
-
-    (b.articles || []).forEach(a => {
-      if (!a.designation) return;
-      db.prepare('INSERT INTO articles (dossier_id,designation,qte,pu) VALUES (?,?,?,?)')
-        .run(dossierId, a.designation, Number(a.qte) || 0, Number(a.pu) || 0);
-    });
-
-    db.prepare('INSERT INTO transport (dossier_id,mode,bl,navire,conteneurs) VALUES (?,?,?,?,?)').run(
-      dossierId, b.transport?.mode || 'Maritime', b.transport?.bl || null, b.transport?.navire || null,
-      JSON.stringify((b.transport?.conteneurs || '').toString().split(',').map(s => s.trim()).filter(Boolean))
-    );
-
-    db.prepare(`
-      INSERT INTO milestones (dossier_id,etd,atd,eta_orig,eta,ata,dedouanement_prev,dedouanement_reel,livraison_prev,livraison_reel)
-      VALUES (@dossier_id,@etd,@atd,@eta_orig,@eta,@ata,@dedouanement_prev,@dedouanement_reel,@livraison_prev,@livraison_reel)
-    `).run({
-      dossier_id: dossierId,
-      etd: b.milestones?.etd || null, atd: null,
-      eta_orig: b.milestones?.eta || null, eta: b.milestones?.eta || null, ata: null,
-      dedouanement_prev: b.milestones?.dedouanementPrev || null, dedouanement_reel: null,
-      livraison_prev: b.milestones?.livraisonPrev || null, livraison_reel: null,
-    });
-
-    const fraisTypes = ['fret', 'assurance', 'douane', 'magasinage', 'transitaire', 'transportLocal'];
-    fraisTypes.forEach(t => {
-      const est = Number(b.frais?.[t]) || 0;
-      db.prepare('INSERT INTO frais (dossier_id,type,estime,reel) VALUES (?,?,?,NULL)').run(dossierId, t, est);
-    });
-
-    (b.paiements || []).forEach(p => {
-      db.prepare('INSERT INTO paiements (dossier_id,type,pct,base,delai,date_base) VALUES (?,?,?,?,?,?)')
-        .run(dossierId, p.type || 'Solde', Number(p.pct) || 0, p.base || 'eta', Number(p.delai) || 0, p.dateBase || null);
-    });
-
-    return dossierId;
-  });
-
-  const dossierId = tx();
-  logAction(req, 'Création dossier', 'dossier', dossierId, b.ref);
-  res.status(201).json({ dossier: logic.assembleDossier(dossierId) });
+  try {
+    if (await data.refExists(b.ref)) {
+      return res.status(409).json({ error: `La référence ${b.ref} existe déjà.` });
+    }
+    const dossierId = await data.createDossier(b, req.user.id);
+    await logAction(req, 'Création dossier', dossierId, b.ref);
+    res.status(201).json({ dossier: await data.assembleDossier(dossierId) });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erreur serveur.' }); }
 });
 
-// ---- UPDATE — infos Achats (Achats / Admin) ----
-router.put('/:id', requireRole('achats'), (req, res) => {
-  const d = db.prepare('SELECT * FROM dossiers WHERE id=?').get(req.params.id);
-  if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
-  const b = req.body || {};
-
-  db.prepare(`UPDATE dossiers SET fournisseur=?, pays=?, incoterm=?, devise=?, taux_prev=? WHERE id=?`).run(
-    b.fournisseur ?? d.fournisseur, b.pays ?? d.pays, b.incoterm ?? d.incoterm,
-    b.devise ?? d.devise, b.tauxPrev ?? d.taux_prev, d.id
-  );
-
-  if (Array.isArray(b.articles)) {
-    db.prepare('DELETE FROM articles WHERE dossier_id=?').run(d.id);
-    b.articles.forEach(a => {
-      if (!a.designation) return;
-      db.prepare('INSERT INTO articles (dossier_id,designation,qte,pu) VALUES (?,?,?,?)')
-        .run(d.id, a.designation, Number(a.qte) || 0, Number(a.pu) || 0);
-    });
-  }
-  if (Array.isArray(b.paiements)) {
-    db.prepare('DELETE FROM paiements WHERE dossier_id=?').run(d.id);
-    b.paiements.forEach(p => {
-      db.prepare('INSERT INTO paiements (dossier_id,type,pct,base,delai,date_base) VALUES (?,?,?,?,?,?)')
-        .run(d.id, p.type || 'Solde', Number(p.pct) || 0, p.base || 'eta', Number(p.delai) || 0, p.dateBase || null);
-    });
-  }
-
-  logAction(req, 'Modification dossier (Achats)', 'dossier', d.id, d.ref);
-  res.json({ dossier: logic.assembleDossier(d.id) });
+router.put('/:id', requireRole('achats'), async (req, res) => {
+  try {
+    const dossierId = await data.updateDossierAchats(req.params.id, req.body || {});
+    if (!dossierId) return res.status(404).json({ error: 'Dossier introuvable.' });
+    await logAction(req, 'Modification dossier (Achats)', dossierId, null);
+    res.json({ dossier: await data.assembleDossier(dossierId) });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erreur serveur.' }); }
 });
 
-// ---- UPDATE — Logistique (Logistique / Admin) ----
-router.put('/:id/logistique', requireRole('logistique'), (req, res) => {
-  const d = db.prepare('SELECT * FROM dossiers WHERE id=?').get(req.params.id);
-  if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
-  const b = req.body || {};
-
-  if (b.transport) {
-    const conteneurs = Array.isArray(b.transport.conteneurs)
-      ? b.transport.conteneurs
-      : (b.transport.conteneurs || '').toString().split(',').map(s => s.trim()).filter(Boolean);
-    db.prepare('UPDATE transport SET mode=?, bl=?, navire=?, conteneurs=? WHERE dossier_id=?')
-      .run(b.transport.mode, b.transport.bl, b.transport.navire, JSON.stringify(conteneurs), d.id);
-  }
-
-  if (b.milestones) {
-    const cur = db.prepare('SELECT * FROM milestones WHERE dossier_id=?').get(d.id);
-    const merged = { ...cur, ...b.milestones };
-    db.prepare(`
-      UPDATE milestones SET etd=?, atd=?, eta_orig=?, eta=?, ata=?, dedouanement_prev=?, dedouanement_reel=?, livraison_prev=?, livraison_reel=?
-      WHERE dossier_id=?
-    `).run(
-      merged.etd, merged.atd, merged.eta_orig, merged.eta, merged.ata,
-      merged.dedouanement_prev, merged.dedouanement_reel, merged.livraison_prev, merged.livraison_reel, d.id
-    );
-  }
-
-  if (b.statut) db.prepare('UPDATE dossiers SET statut=? WHERE id=?').run(b.statut, d.id);
-
-  logAction(req, 'Mise à jour logistique', 'dossier', d.id, JSON.stringify(b.milestones || b.transport || {}));
-  res.json({ dossier: logic.assembleDossier(d.id) });
+router.put('/:id/logistique', requireRole('logistique'), async (req, res) => {
+  try {
+    const dossierId = await data.updateDossierLogistique(req.params.id, req.body || {});
+    if (!dossierId) return res.status(404).json({ error: 'Dossier introuvable.' });
+    await logAction(req, 'Mise à jour logistique', dossierId, JSON.stringify(req.body?.milestones || req.body?.transport || {}));
+    res.json({ dossier: await data.assembleDossier(dossierId) });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erreur serveur.' }); }
 });
 
-// Simulate ETA slippage — convenience endpoint used by the "simulate delay" demo button
-router.post('/:id/logistique/simuler-retard', requireRole('logistique'), (req, res) => {
-  const d = db.prepare('SELECT * FROM dossiers WHERE id=?').get(req.params.id);
-  if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
-  const m = db.prepare('SELECT * FROM milestones WHERE dossier_id=?').get(d.id);
+router.post('/:id/logistique/simuler-retard', requireRole('logistique'), async (req, res) => {
   const jours = Number(req.body?.jours) || 5;
-  const newEta = logic.addDays(m.eta, jours);
-  db.prepare('UPDATE milestones SET eta=? WHERE dossier_id=?').run(newEta, d.id);
-  logAction(req, 'Simulation retard ETA', 'dossier', d.id, `+${jours}j -> ${newEta}`);
-  res.json({ dossier: logic.assembleDossier(d.id) });
+  const dossierId = await data.simulerRetardEta(req.params.id, jours);
+  if (!dossierId) return res.status(404).json({ error: 'Dossier introuvable.' });
+  await logAction(req, 'Simulation retard ETA', dossierId, `+${jours}j`);
+  res.json({ dossier: await data.assembleDossier(dossierId) });
 });
 
-router.post('/:id/logistique/reinitialiser-eta', requireRole('logistique'), (req, res) => {
-  const m = db.prepare('SELECT * FROM milestones WHERE dossier_id=?').get(req.params.id);
-  if (!m) return res.status(404).json({ error: 'Dossier introuvable.' });
-  db.prepare('UPDATE milestones SET eta=? WHERE dossier_id=?').run(m.eta_orig, req.params.id);
-  logAction(req, 'Réinitialisation ETA', 'dossier', req.params.id, null);
-  res.json({ dossier: logic.assembleDossier(req.params.id) });
+router.post('/:id/logistique/reinitialiser-eta', requireRole('logistique'), async (req, res) => {
+  const dossierId = await data.reinitialiserEta(req.params.id);
+  if (!dossierId) return res.status(404).json({ error: 'Dossier introuvable.' });
+  await logAction(req, 'Réinitialisation ETA', dossierId, null);
+  res.json({ dossier: await data.assembleDossier(dossierId) });
 });
 
-// ---- UPDATE — Finance (Finance / Admin) ----
-router.put('/:id/finance', requireRole('finance'), (req, res) => {
-  const d = db.prepare('SELECT * FROM dossiers WHERE id=?').get(req.params.id);
-  if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
-  const b = req.body || {};
-
-  if (b.frais) {
-    Object.entries(b.frais).forEach(([type, vals]) => {
-      const row = db.prepare('SELECT * FROM frais WHERE dossier_id=? AND type=?').get(d.id, type);
-      if (row) {
-        db.prepare('UPDATE frais SET estime=?, reel=? WHERE id=?').run(
-          vals.est ?? row.estime, vals.reel === undefined ? row.reel : vals.reel, row.id
-        );
-      } else {
-        db.prepare('INSERT INTO frais (dossier_id,type,estime,reel) VALUES (?,?,?,?)').run(d.id, type, vals.est || 0, vals.reel ?? null);
-      }
-    });
-  }
-  if (b.tauxReel !== undefined) db.prepare('UPDATE dossiers SET taux_reel=? WHERE id=?').run(b.tauxReel, d.id);
-  if (b.statut) db.prepare('UPDATE dossiers SET statut=? WHERE id=?').run(b.statut, d.id);
-
-  logAction(req, 'Saisie frais réels / finance', 'dossier', d.id, JSON.stringify(b.frais || {}));
-  res.json({ dossier: logic.assembleDossier(d.id) });
+router.put('/:id/finance', requireRole('finance'), async (req, res) => {
+  const dossierId = await data.updateDossierFinance(req.params.id, req.body || {});
+  if (!dossierId) return res.status(404).json({ error: 'Dossier introuvable.' });
+  await logAction(req, 'Saisie frais réels / finance', dossierId, JSON.stringify(req.body?.frais || {}));
+  res.json({ dossier: await data.assembleDossier(dossierId) });
 });
 
-// ---- DELETE (Admin only) ----
-router.delete('/:id', requireRole(), (req, res) => {
+router.post('/:id/paiements/:paiementId/payer', requireRole('finance'), async (req, res) => {
+  const { paye, datePaiement } = req.body || {};
+  const dossierId = await data.markPaiementPaye(req.params.id, req.params.paiementId, paye !== false, datePaiement);
+  if (!dossierId) return res.status(404).json({ error: 'Échéance introuvable.' });
+  await logAction(req, paye === false ? 'Annulation paiement échéance' : 'Marquage échéance payée', dossierId, req.params.paiementId);
+  res.json({ dossier: await data.assembleDossier(dossierId) });
+});
+
+router.post('/:id/frais/:type/payer', requireRole('finance'), async (req, res) => {
+  const { paye } = req.body || {};
+  const dossierId = await data.markFraisPaye(req.params.id, req.params.type, paye !== false);
+  if (!dossierId) return res.status(404).json({ error: 'Poste de frais introuvable.' });
+  await logAction(req, paye === false ? 'Annulation paiement frais' : 'Marquage frais payé', dossierId, req.params.type);
+  res.json({ dossier: await data.assembleDossier(dossierId) });
+});
+
+router.delete('/:id', async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Suppression réservée au profil Admin.' });
-  const d = db.prepare('SELECT * FROM dossiers WHERE id=?').get(req.params.id);
+  const d = await data.assembleDossier(req.params.id);
   if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
-  db.prepare('DELETE FROM dossiers WHERE id=?').run(d.id);
-  logAction(req, 'Suppression dossier', 'dossier', d.id, d.ref);
+  await data.deleteDossier(req.params.id);
+  await logAction(req, 'Suppression dossier', req.params.id, d.ref);
   res.json({ ok: true });
 });
 

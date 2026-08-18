@@ -602,6 +602,13 @@ function landedCostCompute(d, mode){
 }
 const FRAIS_LABELS = {fret:'Fret international',assurance:'Assurance',douane:'Droits de douane & taxes',magasinage:'Magasinage / Surestaries',transitaire:'Honoraires transitaire',transportLocal:'Transport local'};
 
+function valeurMarchandiseC(d){ return d.articles.reduce((s,a)=>s+a.valeur,0); }
+function montantPayeC(d){ return (d.paiements||[]).filter(p=>p.paye).reduce((s,p)=>s+valeurMarchandiseC(d)*p.pct/100,0); }
+function soldeRestantFactureC(d){ return valeurMarchandiseC(d) - montantPayeC(d); }
+function fraisEngagesC(d){ return Object.values(d.frais).reduce((s,f)=>s+(f.reel??f.est??0),0); }
+function fraisPayesC(d){ return Object.values(d.frais).reduce((s,f)=>s+(f.paye?(f.reel??f.est??0):0),0); }
+function fraisRestantsC(d){ return fraisEngagesC(d) - fraisPayesC(d); }
+
 function pageFinance(){
   const canEdit = ['admin','finance'].includes(session.user.role);
   const d = cache.dossiers.find(x=>x.id===financeSelected) || cache.dossiers[0];
@@ -634,12 +641,13 @@ function pageFinance(){
     <div class="panel">
       <div class="panel-head"><h2>Frais annexes du dossier</h2>${canEdit?`<button class="btn small" data-edit-finance="${d.id}">✎ Saisir frais réels</button>`:''}</div>
       <div class="panel-sub">${d.ref} — montants en TND</div>
-      <table><thead><tr><th class="txt">Poste de frais</th><th>Estimé</th><th>Réel</th><th>Écart</th></tr></thead>
+      <table><thead><tr><th class="txt">Poste de frais</th><th>Estimé</th><th>Réel</th><th>Écart</th><th class="txt">Payé</th></tr></thead>
       <tbody>${Object.entries(d.frais).map(([k,f])=>{
         const ecart = f.reel!=null? f.reel-f.est : null;
         return `<tr><td class="txt">${FRAIS_LABELS[k]}</td><td>${f.est.toLocaleString('fr-FR')}</td>
           <td>${f.reel!=null?f.reel.toLocaleString('fr-FR'):'<span class="muted">—</span>'}</td>
-          <td class="${ecart>0?'diff-up':ecart<0?'diff-down':''}">${ecart!=null?(ecart>0?'+':'')+ecart.toLocaleString('fr-FR'):'—'}</td></tr>`;
+          <td class="${ecart>0?'diff-up':ecart<0?'diff-down':''}">${ecart!=null?(ecart>0?'+':'')+ecart.toLocaleString('fr-FR'):'—'}</td>
+          <td class="txt">${canEdit?`<button class="btn small" data-toggle-frais-paye="${d.id}" data-frais-type="${k}">${f.paye?'✓ Payé':'Marquer payé'}</button>`:(f.paye?'✓ Payé':'—')}</td></tr>`;
       }).join('')}</tbody></table>
     </div>
     <div class="panel">
@@ -657,16 +665,35 @@ function pageFinance(){
 /* ---------------- TRESORERIE ---------------- */
 function pageTresorerie(){
   const ech = cache.echeancier;
+  const dossiersActifs = cache.dossiers.filter(d=>d.statut!=='cloture');
   return `
   <div class="panel">
-    <div class="panel-head"><h2>Échéancier de décaissement prévisionnel</h2>
+    <h2>Résumé par dossier</h2>
+    <div class="panel-sub">Avance payée et solde restant sur la facture fournisseur, frais annexes engagés (coût réel une fois saisi) et déjà réglés</div>
+    <table><thead><tr><th class="txt">Dossier</th><th class="txt">Fournisseur</th><th>Valeur facture</th><th>Avance payée</th><th>Solde restant</th><th>Frais engagés</th><th>Frais payés</th><th>Frais restants</th></tr></thead>
+      <tbody>${dossiersActifs.map(d=>`<tr>
+        <td class="txt">${d.ref}</td><td class="txt">${d.fournisseur}</td>
+        <td>${fmtMoney(valeurMarchandiseC(d), d.devise)}</td>
+        <td class="diff-down">${fmtMoney(montantPayeC(d), d.devise)}</td>
+        <td class="${soldeRestantFactureC(d)>0?'diff-up':''}">${fmtMoney(soldeRestantFactureC(d), d.devise)}</td>
+        <td>${fmtMoney(Math.round(fraisEngagesC(d)), 'TND')}</td>
+        <td class="diff-down">${fmtMoney(Math.round(fraisPayesC(d)), 'TND')}</td>
+        <td class="${fraisRestantsC(d)>0?'diff-up':''}">${fmtMoney(Math.round(fraisRestantsC(d)), 'TND')}</td>
+      </tr>`).join('') || '<tr><td class="txt muted" colspan="8">Aucun dossier en cours.</td></tr>'}</tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Échéancier de décaissement — facture fournisseur</h2>
       <button class="btn small" id="exportTresorerieXlsx">⬇ Exporter (Excel)</button></div>
-    <div class="panel-sub">Calculé automatiquement à partir des dates ETA/BL et des conditions de paiement — se met à jour si l'ETA glisse</div>
-    <table><thead><tr><th class="txt">Dossier</th><th class="txt">Fournisseur</th><th class="txt">Type</th><th class="txt">Base</th><th>Échéance</th><th>Montant</th><th>Jours restants</th></tr></thead>
+    <div class="panel-sub">Calculé automatiquement à partir des dates ETA/BL et des conditions de paiement — se met à jour si l'ETA glisse. Cochez « Marquer payé » une fois le virement effectué.</div>
+    <table><thead><tr><th class="txt">Dossier</th><th class="txt">Fournisseur</th><th class="txt">Type</th><th class="txt">Base</th><th>Échéance</th><th>Montant</th><th>Jours restants</th><th class="txt">Statut</th></tr></thead>
       <tbody>${ech.map(e=>`<tr>
         <td class="txt">${e.dossierRef}</td><td class="txt">${e.fournisseur}</td><td class="txt">${e.type} (${e.pct}%)</td>
         <td class="txt">${e.base==='commande'?'Commande':e.base.toUpperCase()} +${e.delai}j</td><td>${fmtDate(e.dateEcheance)}</td>
-        <td>${fmtMoney(e.montant, e.devise)}</td><td class="${e.joursRestants<=7?'diff-up':''}">${e.joursRestants<0?'en retard':e.joursRestants+' j'}</td>
+        <td>${fmtMoney(e.montant, e.devise)}</td><td class="${e.joursRestants<=7 && !e.paye?'diff-up':''}">${e.paye?'—':(e.joursRestants<0?'en retard':e.joursRestants+' j')}</td>
+        <td class="txt">${e.paye
+          ? `<span class="status-pill status-livre">✓ Payé le ${fmtDate(e.datePaiement)}</span> <button class="btn small" data-toggle-paiement-paye="${e.dossierId}" data-paiement-id="${e.paiementId}" data-paye="false" style="margin-left:4px;">Annuler</button>`
+          : `<button class="btn small" data-toggle-paiement-paye="${e.dossierId}" data-paiement-id="${e.paiementId}" data-paye="true">Marquer payé</button>`}</td>
       </tr>`).join('')}</tbody>
     </table>
   </div>
@@ -732,6 +759,7 @@ function articleRowHtml(a={}){
   </div>`;
 }
 function paiementRowHtml(p={}){
+  const dateDisabled = (p.base || 'eta') !== 'commande';
   return `<div class="dyn-row pay pay-row">
     <select class="p-type"><option ${p.type==='Acompte'?'selected':''}>Acompte</option><option ${p.type==='Solde'?'selected':''}>Solde</option></select>
     <input placeholder="%" type="number" class="p-pct" value="${p.pct||''}">
@@ -739,11 +767,11 @@ function paiementRowHtml(p={}){
       <option value="commande" ${p.base==='commande'?'selected':''}>À la commande</option>
       <option value="etd" ${p.base==='etd'?'selected':''}>ETD</option>
       <option value="bl" ${p.base==='bl'?'selected':''}>BL</option>
-      <option value="eta" ${p.base==='eta'?'selected':''}>ETA</option>
+      <option value="eta" ${(!p.base||p.base==='eta')?'selected':''}>ETA</option>
       <option value="ata" ${p.base==='ata'?'selected':''}>ATA</option>
     </select>
     <input placeholder="Délai (j)" type="number" class="p-delai" value="${p.delai||0}">
-    <input type="date" class="p-dateBase" value="${p.dateBase||''}" title="Date de commande (si base = commande)">
+    <input type="date" class="p-dateBase" value="${p.dateBase||''}" title="Date de commande — utilisée uniquement si Base = « À la commande »" ${dateDisabled?'disabled style="opacity:.4;"':''}>
     <button type="button" class="dyn-remove">✕</button>
   </div>`;
 }
@@ -807,6 +835,15 @@ function openDossierForm(existing){
   document.getElementById('addArticle').onclick = ()=> document.getElementById('articlesList').insertAdjacentHTML('beforeend', articleRowHtml());
   document.getElementById('addPaiement').onclick = ()=> document.getElementById('paiementsList').insertAdjacentHTML('beforeend', paiementRowHtml());
   document.getElementById('modalRoot').addEventListener('click', e=>{ if(e.target.classList.contains('dyn-remove')) e.target.closest('.dyn-row').remove(); });
+  document.getElementById('modalRoot').addEventListener('change', e=>{
+    if(e.target.classList.contains('p-base')){
+      const dateInput = e.target.closest('.pay-row').querySelector('.p-dateBase');
+      const isCommande = e.target.value === 'commande';
+      dateInput.disabled = !isCommande;
+      dateInput.style.opacity = isCommande ? '1' : '.4';
+      if(!isCommande) dateInput.value = '';
+    }
+  });
   document.getElementById('cancelModal').onclick = closeModal;
 
   document.getElementById('dossierForm').addEventListener('submit', async e=>{
@@ -1005,6 +1042,26 @@ function attachContentHandlers(){
   });
   document.querySelectorAll('[data-reset-delay]').forEach(b=>{
     b.onclick = async ()=>{ try{ await api(`/dossiers/${b.dataset.resetDelay}/logistique/reinitialiser-eta`, {method:'POST'}); toast('ETA réinitialisé.'); await refresh(); }catch(err){ toast(err.message, true); } };
+  });
+  document.querySelectorAll('[data-toggle-paiement-paye]').forEach(b=>{
+    b.onclick = async ()=>{
+      const paye = b.dataset.paye === 'true';
+      try{
+        await api(`/dossiers/${b.dataset.togglePaiementPaye}/paiements/${b.dataset.paiementId}/payer`, {method:'POST', body: JSON.stringify({paye})});
+        toast(paye ? 'Échéance marquée comme payée.' : 'Paiement annulé.'); await refresh();
+      }catch(err){ toast(err.message, true); }
+    };
+  });
+  document.querySelectorAll('[data-toggle-frais-paye]').forEach(b=>{
+    b.onclick = async ()=>{
+      const dossier = cache.dossiers.find(x=>x.id==b.dataset.toggleFraisPaye);
+      const type = b.dataset.fraisType;
+      const currentlyPaye = dossier.frais[type].paye;
+      try{
+        await api(`/dossiers/${b.dataset.toggleFraisPaye}/frais/${type}/payer`, {method:'POST', body: JSON.stringify({paye: !currentlyPaye})});
+        toast(!currentlyPaye ? 'Frais marqué comme payé.' : 'Paiement du frais annulé.'); await refresh();
+      }catch(err){ toast(err.message, true); }
+    };
   });
   document.querySelectorAll('[data-fmode]').forEach(b=>{
     b.onclick = ()=>{ financeMode=b.dataset.fmode; document.getElementById('content').innerHTML = pageContent(); attachContentHandlers(); };

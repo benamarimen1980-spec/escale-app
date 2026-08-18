@@ -1,76 +1,82 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const db = require('../db');
+const { query } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
 
-router.get('/', requireRole('admin'), (req, res) => {
-  const users = db.prepare('SELECT id,nom,email,role,service,status FROM users ORDER BY (status=\'pending\') DESC, id').all();
-  res.json({ users });
-});
-
 const VALID_ROLES = ['admin', 'achats', 'logistique', 'achats_logistique', 'finance'];
 const VALID_STATUSES = ['pending', 'active', 'rejected'];
 
-router.post('/', requireRole('admin'), (req, res) => {
+router.get('/', requireRole('admin'), async (req, res) => {
+  const { rows } = await query(`SELECT id,nom,email,role,service,status FROM users ORDER BY (status='pending') DESC, id`, []);
+  res.json({ users: rows });
+});
+
+router.post('/', requireRole('admin'), async (req, res) => {
   const { nom, email, password, role, service } = req.body || {};
   if (!nom || !email || !password || !role) return res.status(400).json({ error: 'Champs requis manquants.' });
   if (!VALID_ROLES.includes(role)) return res.status(400).json({ error: 'Rôle invalide.' });
-  const exists = db.prepare('SELECT id FROM users WHERE email=?').get(email.toLowerCase().trim());
-  if (exists) return res.status(409).json({ error: 'Cet email existe déjà.' });
+  const normalizedEmail = email.toLowerCase().trim();
+  const { rows: exists } = await query('SELECT id FROM users WHERE email=$1', [normalizedEmail]);
+  if (exists.length) return res.status(409).json({ error: 'Cet email existe déjà.' });
 
-  const info = db.prepare('INSERT INTO users (nom,email,password_hash,role,service,status) VALUES (?,?,?,?,?,?)')
-    .run(nom, email.toLowerCase().trim(), bcrypt.hashSync(password, 10), role, service || null, 'active');
+  const { rows } = await query(
+    'INSERT INTO users (nom,email,password_hash,role,service,status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+    [nom, normalizedEmail, bcrypt.hashSync(password, 10), role, service || null, 'active']
+  );
 
-  db.prepare(`INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id) VALUES (?,?,?,?,?)`)
-    .run(req.user.id, req.user.nom, 'Création utilisateur', 'user', info.lastInsertRowid);
+  await query('INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id) VALUES ($1,$2,$3,$4,$5)',
+    [req.user.id, req.user.nom, 'Création utilisateur', 'user', rows[0].id]);
 
-  res.status(201).json({ user: { id: info.lastInsertRowid, nom, email, role, service, status: 'active' } });
+  res.status(201).json({ user: { id: rows[0].id, nom, email: normalizedEmail, role, service, status: 'active' } });
 });
 
-router.put('/:id', requireRole('admin'), (req, res) => {
-  const target = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
+router.put('/:id', requireRole('admin'), async (req, res) => {
+  const { rows } = await query('SELECT * FROM users WHERE id=$1', [req.params.id]);
+  const target = rows[0];
   if (!target) return res.status(404).json({ error: 'Utilisateur introuvable.' });
   const { role, service, nom, status } = req.body || {};
   if (role && !VALID_ROLES.includes(role)) return res.status(400).json({ error: 'Rôle invalide.' });
   if (status && !VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Statut invalide.' });
 
-  db.prepare('UPDATE users SET role=?, service=?, nom=?, status=? WHERE id=?').run(
+  await query('UPDATE users SET role=$1, service=$2, nom=$3, status=$4 WHERE id=$5', [
     role ?? target.role, service !== undefined ? service : target.service, nom ?? target.nom,
-    status ?? target.status, target.id
-  );
+    status ?? target.status, target.id,
+  ]);
 
-  db.prepare(`INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id,details) VALUES (?,?,?,?,?,?)`)
-    .run(req.user.id, req.user.nom, 'Modification utilisateur', 'user', target.id, `rôle: ${role ?? target.role}, statut: ${status ?? target.status}`);
+  await query('INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id,details) VALUES ($1,$2,$3,$4,$5,$6)',
+    [req.user.id, req.user.nom, 'Modification utilisateur', 'user', target.id, `rôle: ${role ?? target.role}, statut: ${status ?? target.status}`]);
 
-  const updated = db.prepare('SELECT id,nom,email,role,service,status FROM users WHERE id=?').get(target.id);
-  res.json({ user: updated });
+  const { rows: updated } = await query('SELECT id,nom,email,role,service,status FROM users WHERE id=$1', [target.id]);
+  res.json({ user: updated[0] });
 });
 
-router.post('/:id/approve', requireRole('admin'), (req, res) => {
-  const target = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
+router.post('/:id/approve', requireRole('admin'), async (req, res) => {
+  const { rows } = await query('SELECT * FROM users WHERE id=$1', [req.params.id]);
+  const target = rows[0];
   if (!target) return res.status(404).json({ error: 'Utilisateur introuvable.' });
-  db.prepare('UPDATE users SET status=? WHERE id=?').run('active', target.id);
-  db.prepare(`INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id) VALUES (?,?,?,?,?)`)
-    .run(req.user.id, req.user.nom, 'Approbation compte', 'user', target.id);
-  const updated = db.prepare('SELECT id,nom,email,role,service,status FROM users WHERE id=?').get(target.id);
-  res.json({ user: updated });
+  await query('UPDATE users SET status=$1 WHERE id=$2', ['active', target.id]);
+  await query('INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id) VALUES ($1,$2,$3,$4,$5)',
+    [req.user.id, req.user.nom, 'Approbation compte', 'user', target.id]);
+  const { rows: updated } = await query('SELECT id,nom,email,role,service,status FROM users WHERE id=$1', [target.id]);
+  res.json({ user: updated[0] });
 });
 
-router.post('/:id/reject', requireRole('admin'), (req, res) => {
-  const target = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
+router.post('/:id/reject', requireRole('admin'), async (req, res) => {
+  const { rows } = await query('SELECT * FROM users WHERE id=$1', [req.params.id]);
+  const target = rows[0];
   if (!target) return res.status(404).json({ error: 'Utilisateur introuvable.' });
-  db.prepare('UPDATE users SET status=? WHERE id=?').run('rejected', target.id);
-  db.prepare(`INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id) VALUES (?,?,?,?,?)`)
-    .run(req.user.id, req.user.nom, 'Refus compte', 'user', target.id);
-  const updated = db.prepare('SELECT id,nom,email,role,service,status FROM users WHERE id=?').get(target.id);
-  res.json({ user: updated });
+  await query('UPDATE users SET status=$1 WHERE id=$2', ['rejected', target.id]);
+  await query('INSERT INTO audit_log (user_id,user_nom,action,entity,entity_id) VALUES ($1,$2,$3,$4,$5)',
+    [req.user.id, req.user.nom, 'Refus compte', 'user', target.id]);
+  const { rows: updated } = await query('SELECT id,nom,email,role,service,status FROM users WHERE id=$1', [target.id]);
+  res.json({ user: updated[0] });
 });
 
-router.get('/audit-log', requireRole('admin'), (req, res) => {
-  const rows = db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT 100').all();
+router.get('/audit-log', requireRole('admin'), async (req, res) => {
+  const { rows } = await query('SELECT * FROM audit_log ORDER BY id DESC LIMIT 100', []);
   res.json({ log: rows });
 });
 

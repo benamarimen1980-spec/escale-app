@@ -2,6 +2,7 @@ const express = require('express');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const { requireAuth } = require('../middleware/auth');
+const data = require('../data');
 const logic = require('../logic');
 
 const router = express.Router();
@@ -9,30 +10,23 @@ router.use(requireAuth);
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
-// ---- EXCEL : échéancier de trésorerie ----
 router.get('/tresorerie/excel', async (req, res) => {
-  const rows = logic.allEcheances(today());
+  const dossiers = await data.listDossiers();
+  const rows = logic.allEcheances(dossiers, today());
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ESCALE';
   wb.created = new Date();
   const sheet = wb.addWorksheet('Échéancier trésorerie');
-
   sheet.columns = [
-    { header: 'Dossier', key: 'ref', width: 16 },
-    { header: 'Fournisseur', key: 'fournisseur', width: 28 },
-    { header: 'Type de règlement', key: 'type', width: 16 },
-    { header: '%', key: 'pct', width: 8 },
-    { header: 'Base', key: 'base', width: 14 },
-    { header: 'Délai (j)', key: 'delai', width: 10 },
-    { header: "Date d'échéance", key: 'date', width: 16 },
-    { header: 'Montant', key: 'montant', width: 14 },
-    { header: 'Devise', key: 'devise', width: 8 },
-    { header: 'Jours restants', key: 'jours', width: 12 },
+    { header: 'Dossier', key: 'ref', width: 16 }, { header: 'Fournisseur', key: 'fournisseur', width: 28 },
+    { header: 'Type de règlement', key: 'type', width: 16 }, { header: '%', key: 'pct', width: 8 },
+    { header: 'Base', key: 'base', width: 14 }, { header: 'Délai (j)', key: 'delai', width: 10 },
+    { header: "Date d'échéance", key: 'date', width: 16 }, { header: 'Montant', key: 'montant', width: 14 },
+    { header: 'Devise', key: 'devise', width: 8 }, { header: 'Jours restants', key: 'jours', width: 12 },
   ];
-  sheet.getRow(1).font = { bold: true };
-  sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } };
   sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } };
 
   rows.forEach(e => {
     const j = logic.daysBetween(today(), e.dateEcheance);
@@ -51,26 +45,21 @@ router.get('/tresorerie/excel', async (req, res) => {
   res.end();
 });
 
-// ---- EXCEL : liste des dossiers ----
 router.get('/dossiers/excel', async (req, res) => {
-  const dossiers = logic.listDossiers();
+  const dossiers = await data.listDossiers();
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet('Dossiers');
   sheet.columns = [
-    { header: 'Référence', key: 'ref', width: 16 },
-    { header: 'Fournisseur', key: 'fournisseur', width: 28 },
-    { header: 'Pays', key: 'pays', width: 14 },
-    { header: 'Incoterm', key: 'incoterm', width: 10 },
-    { header: 'Devise', key: 'devise', width: 8 },
-    { header: 'Valeur marchandise', key: 'valeur', width: 18 },
-    { header: 'Statut', key: 'statut', width: 16 },
-    { header: 'ETA', key: 'eta', width: 14 },
+    { header: 'Référence', key: 'ref', width: 16 }, { header: 'Fournisseur', key: 'fournisseur', width: 28 },
+    { header: 'Pays', key: 'pays', width: 14 }, { header: 'Incoterm', key: 'incoterm', width: 10 },
+    { header: 'Devise', key: 'devise', width: 8 }, { header: 'Valeur marchandise', key: 'valeur', width: 18 },
+    { header: 'Statut', key: 'statut', width: 16 }, { header: 'ETA', key: 'eta', width: 14 },
   ];
   sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } };
   dossiers.forEach(d => sheet.addRow({
     ref: d.ref, fournisseur: d.fournisseur, pays: d.pays, incoterm: d.incoterm, devise: d.devise,
-    valeur: logic.valeurMarchandise(d), statut: d.statut, eta: d.milestones.eta,
+    valeur: logic.valeurMarchandise(d), statut: d.statut, eta: d.milestones?.eta,
   }));
   sheet.getColumn('valeur').numFmt = '#,##0';
 
@@ -80,9 +69,8 @@ router.get('/dossiers/excel', async (req, res) => {
   res.end();
 });
 
-// ---- EXCEL : coût de revient détaillé d'un dossier (estimé vs réel, par article) ----
 router.get('/dossiers/:id/cout-revient/excel', async (req, res) => {
-  const d = logic.assembleDossier(req.params.id);
+  const d = await data.assembleDossier(req.params.id);
   if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
 
   const itemsEst = logic.landedCost(d, 'est');
@@ -96,7 +84,6 @@ router.get('/dossiers/:id/cout-revient/excel', async (req, res) => {
   wb.created = new Date();
   const sheet = wb.addWorksheet('Coût de revient');
 
-  // En-tête récapitulatif du dossier
   sheet.mergeCells('A1:J1');
   sheet.getCell('A1').value = `Coût de revient — ${d.ref} — ${d.fournisseur}`;
   sheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF134E45' } };
@@ -109,10 +96,8 @@ router.get('/dossiers/:id/cout-revient/excel', async (req, res) => {
   sheet.getCell('F3').value = d.tauxPrev ?? '—';
   sheet.getCell('G3').value = 'Taux réel';
   sheet.getCell('H3').value = d.tauxReel ?? '—';
-  sheet.getRow(3).font = { bold: false };
   ['A3', 'C3', 'E3', 'G3'].forEach(c => { sheet.getCell(c).font = { bold: true, color: { argb: 'FF5B6B62' }, size: 10 }; });
 
-  // Tableau des postes de frais annexes
   sheet.getCell('A5').value = 'Frais annexes (TND)';
   sheet.getCell('A5').font = { bold: true, color: { argb: 'FF134E45' } };
   const fraisHeaderRow = sheet.getRow(6);
@@ -134,18 +119,16 @@ router.get('/dossiers/:id/cout-revient/excel', async (req, res) => {
   totalFraisRow.font = { bold: true };
   r += 2;
 
-  // Tableau détaillé par article : coût estimé vs réel, coût unitaire (par pièce)
   sheet.getCell(`A${r}`).value = 'Coût de revient par article (Landed Cost)';
   sheet.getCell(`A${r}`).font = { bold: true, color: { argb: 'FF134E45' } };
   r += 1;
-  const tableHeaderRowIdx = r;
   const headers = [
     'Article', 'Qté', `PU (${d.devise})`, `Valeur (${d.devise})`,
     'Frais alloués — estimé (TND)', 'Frais alloués — réel (TND)',
     'Coût de revient — estimé (TND)', 'Coût de revient — réel (TND)',
     'Coût par pièce — estimé (TND)', 'Coût par pièce — réel (TND)',
   ];
-  const headerRow = sheet.getRow(tableHeaderRowIdx);
+  const headerRow = sheet.getRow(r);
   headers.forEach((h, i) => { headerRow.getCell(1 + i).value = h; });
   headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   headerRow.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } }; });
@@ -186,9 +169,8 @@ router.get('/dossiers/:id/cout-revient/excel', async (req, res) => {
   res.end();
 });
 
-// ---- PDF : fiche dossier (landed cost + jalons) ----
-router.get('/dossiers/:id/pdf', (req, res) => {
-  const d = logic.assembleDossier(req.params.id);
+router.get('/dossiers/:id/pdf', async (req, res) => {
+  const d = await data.assembleDossier(req.params.id);
   if (!d) return res.status(404).json({ error: 'Dossier introuvable.' });
   const items = logic.landedCost(d, 'est');
   const totalFrais = logic.fraisTotal(d, 'est');
@@ -205,16 +187,15 @@ router.get('/dossiers/:id/pdf', (req, res) => {
   doc.fillColor('#152420').fontSize(15).text(`Fiche dossier — ${d.ref}`);
   doc.fontSize(10).fillColor('#5B6B62').text(`Généré le ${today()}`);
   doc.moveDown(1);
-
   doc.fillColor('#152420').fontSize(11).text(`Fournisseur : ${d.fournisseur} (${d.pays || '-'})`);
   doc.text(`Incoterm : ${d.incoterm}   |   Devise : ${d.devise}   |   Taux prévisionnel : ${d.tauxPrev ?? '-'}`);
   doc.text(`Statut : ${d.statut}`);
-  doc.text(`Transport : ${d.transport.mode || '-'} — BL/LTA ${d.transport.bl || '-'} — ${d.transport.navire || '-'}`);
+  doc.text(`Transport : ${d.transport?.mode || '-'} — BL/LTA ${d.transport?.bl || '-'} — ${d.transport?.navire || '-'}`);
   doc.moveDown(0.8);
 
   doc.fontSize(12).fillColor('#134E45').text('Jalons logistiques');
   doc.fontSize(10).fillColor('#152420');
-  const m = d.milestones;
+  const m = d.milestones || {};
   [['ETD', m.etd], ['ATD', m.atd], ['ETA', m.eta], ['ATA', m.ata],
    ['Dédouanement prévisionnel', m.dedouanementPrev], ['Dédouanement réel', m.dedouanementReel],
    ['Livraison usine prévisionnelle', m.livraisonPrev], ['Livraison usine réelle', m.livraisonReel]]
@@ -225,8 +206,7 @@ router.get('/dossiers/:id/pdf', (req, res) => {
   doc.fontSize(9).fillColor('#5B6B62');
   const startX = doc.x, colW = [180, 50, 70, 80, 90];
   let y = doc.y + 4;
-  const headers = ['Article', 'Qté', 'Valeur', 'Frais alloués', 'Coût revient'];
-  headers.forEach((h, i) => doc.text(h, startX + colW.slice(0, i).reduce((a, b) => a + b, 0), y, { width: colW[i] }));
+  ['Article', 'Qté', 'Valeur', 'Frais alloués', 'Coût revient'].forEach((h, i) => doc.text(h, startX + colW.slice(0, i).reduce((a, b) => a + b, 0), y, { width: colW[i] }));
   y += 14;
   doc.fillColor('#152420').fontSize(9);
   items.forEach(a => {
@@ -240,8 +220,7 @@ router.get('/dossiers/:id/pdf', (req, res) => {
   doc.fontSize(10).fillColor('#134E45').text(`Total valeur : ${Math.round(totalVal).toLocaleString('fr-FR')} ${d.devise}    Total frais annexes : ${Math.round(totalFrais).toLocaleString('fr-FR')} ${d.deviseFrais}`, startX, y);
 
   doc.moveDown(2);
-  doc.fontSize(8).fillColor('#8A968E').text('Document généré automatiquement par ESCALE — prototype de gestion des importations.', { align: 'center' });
-
+  doc.fontSize(8).fillColor('#8A968E').text('Document généré automatiquement par ESCALE.', { align: 'center' });
   doc.end();
 });
 

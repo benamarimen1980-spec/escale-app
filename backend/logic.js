@@ -1,5 +1,3 @@
-const db = require('./db');
-
 const FRAIS_LABELS = {
   fret: 'Fret international',
   assurance: 'Assurance',
@@ -12,48 +10,16 @@ const FRAIS_LABELS = {
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
 const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r.toISOString().slice(0, 10); };
 
-function assembleDossier(id) {
-  const d = db.prepare('SELECT * FROM dossiers WHERE id=?').get(id);
-  if (!d) return null;
-  const articles = db.prepare('SELECT id,designation,qte,pu, (qte*pu) as valeur FROM articles WHERE dossier_id=?').all(id);
-  const transportRow = db.prepare('SELECT * FROM transport WHERE dossier_id=?').get(id) || {};
-  const milestones = db.prepare('SELECT * FROM milestones WHERE dossier_id=?').get(id) || {};
-  const fraisRows = db.prepare('SELECT * FROM frais WHERE dossier_id=?').all(id);
-  const paiementsRows = db.prepare('SELECT * FROM paiements WHERE dossier_id=?').all(id);
-
-  const frais = {};
-  fraisRows.forEach(f => { frais[f.type] = { est: f.estime, reel: f.reel }; });
-
-  return {
-    id: d.id, ref: d.ref, fournisseur: d.fournisseur, pays: d.pays,
-    incoterm: d.incoterm, devise: d.devise, deviseFrais: d.devise_frais,
-    tauxPrev: d.taux_prev, tauxReel: d.taux_reel, statut: d.statut,
-    createdAt: d.created_at,
-    articles,
-    transport: {
-      mode: transportRow.mode, bl: transportRow.bl, navire: transportRow.navire,
-      conteneurs: transportRow.conteneurs ? JSON.parse(transportRow.conteneurs) : [],
-    },
-    milestones: {
-      etd: milestones.etd, atd: milestones.atd, etaOrig: milestones.eta_orig, eta: milestones.eta,
-      ata: milestones.ata, dedouanementPrev: milestones.dedouanement_prev, dedouanementReel: milestones.dedouanement_reel,
-      livraisonPrev: milestones.livraison_prev, livraisonReel: milestones.livraison_reel,
-    },
-    frais,
-    paiements: paiementsRows.map(p => ({ id: p.id, type: p.type, pct: p.pct, base: p.base, delai: p.delai, dateBase: p.date_base })),
-  };
+function valeurMarchandise(d) {
+  return (d.articles || []).reduce((s, a) => s + (a.qte * a.pu), 0);
 }
-
-function listDossiers() {
-  const ids = db.prepare('SELECT id FROM dossiers ORDER BY id DESC').all().map(r => r.id);
-  return ids.map(assembleDossier);
-}
-
-function valeurMarchandise(d) { return d.articles.reduce((s, a) => s + a.valeur, 0); }
 
 function fraisTotal(d, mode) {
   let t = 0;
-  Object.values(d.frais).forEach(f => { const v = mode === 'reel' ? (f.reel !== null && f.reel !== undefined ? f.reel : f.est) : f.est; t += v; });
+  Object.values(d.frais || {}).forEach(f => {
+    const v = mode === 'reel' ? (f.reel !== null && f.reel !== undefined ? f.reel : f.est) : f.est;
+    t += v || 0;
+  });
   return t;
 }
 
@@ -61,26 +27,48 @@ function landedCost(d, mode) {
   const totalFrais = fraisTotal(d, mode);
   const totalVal = valeurMarchandise(d);
   const taux = mode === 'reel' && d.tauxReel ? d.tauxReel : d.tauxPrev;
-  return d.articles.map(a => {
-    const prorata = totalVal > 0 ? a.valeur / totalVal : 0;
+  return (d.articles || []).map(a => {
+    const valeur = a.qte * a.pu;
+    const prorata = totalVal > 0 ? valeur / totalVal : 0;
     const fraisAlloc = prorata * totalFrais;
-    const valeurLocale = a.valeur * taux;
+    const valeurLocale = valeur * (taux || 0);
     const coutRevientLocal = valeurLocale + fraisAlloc;
-    return { ...a, fraisAlloc, coutRevientLocal, coutUnitaireLocal: coutRevientLocal / a.qte };
+    return { ...a, valeur, fraisAlloc, coutRevientLocal, coutUnitaireLocal: a.qte ? coutRevientLocal / a.qte : 0 };
   });
 }
 
 function milestoneDate(d, base) {
-  if (base === 'commande') return d.paiements.find(p => p.base === 'commande')?.dateBase || d.milestones.etd;
-  if (base === 'etd') return d.milestones.atd || d.milestones.etd;
-  if (base === 'bl') return d.milestones.atd || d.milestones.etd;
-  if (base === 'eta') return d.milestones.eta;
-  if (base === 'ata') return d.milestones.ata || d.milestones.eta;
+  const m = d.milestones || {};
+  if (base === 'commande') return (d.paiements || []).find(p => p.base === 'commande')?.dateBase || m.etd;
+  if (base === 'etd') return m.atd || m.etd;
+  if (base === 'bl') return m.atd || m.etd;
+  if (base === 'eta') return m.eta;
+  if (base === 'ata') return m.ata || m.eta;
   return null;
 }
 
+function montantPaye(d) {
+  return (d.paiements || []).filter(p => p.paye).reduce((s, p) => s + valeurMarchandise(d) * p.pct / 100, 0);
+}
+
+function soldeRestantFacture(d) {
+  return valeurMarchandise(d) - montantPaye(d);
+}
+
+function fraisEngages(d) {
+  return Object.values(d.frais || {}).reduce((s, f) => s + (f.reel ?? f.est ?? 0), 0);
+}
+
+function fraisPayes(d) {
+  return Object.values(d.frais || {}).reduce((s, f) => s + (f.paye ? (f.reel ?? f.est ?? 0) : 0), 0);
+}
+
+function fraisRestants(d) {
+  return fraisEngages(d) - fraisPayes(d);
+}
+
 function echeancierDossier(d) {
-  return d.paiements.map(p => {
+  return (d.paiements || []).map(p => {
     const base = p.base === 'commande' ? p.dateBase : milestoneDate(d, p.base);
     const dateEcheance = base ? addDays(base, p.delai) : null;
     const montantDevise = valeurMarchandise(d) * p.pct / 100;
@@ -88,9 +76,9 @@ function echeancierDossier(d) {
   });
 }
 
-function allEcheances(today) {
+function allEcheances(dossiers, today) {
   const rows = [];
-  listDossiers().forEach(d => {
+  dossiers.forEach(d => {
     if (d.statut === 'cloture') return;
     echeancierDossier(d).forEach(e => {
       if (!e.dateEcheance) return;
@@ -100,19 +88,20 @@ function allEcheances(today) {
   return rows.sort((a, b) => new Date(a.dateEcheance) - new Date(b.dateEcheance));
 }
 
-function computeAlerts(today) {
+function computeAlerts(dossiers, today) {
   const alerts = [];
-  listDossiers().forEach(d => {
+  dossiers.forEach(d => {
     if (d.statut === 'cloture') return;
-    if (d.milestones.eta && d.milestones.etaOrig && d.milestones.eta !== d.milestones.etaOrig) {
-      const delta = daysBetween(d.milestones.etaOrig, d.milestones.eta);
+    const m = d.milestones || {};
+    if (m.eta && m.etaOrig && m.eta !== m.etaOrig) {
+      const delta = daysBetween(m.etaOrig, m.eta);
       alerts.push({
         type: 'logistique', sev: delta > 5 ? 'red' : 'amber', dossierRef: d.ref, dossierId: d.id,
-        text: `Retard ETA détecté — glissement de ${delta} jour${delta > 1 ? 's' : ''} (${d.milestones.etaOrig} → ${d.milestones.eta}).`,
+        text: `Retard ETA détecté — glissement de ${delta} jour${delta > 1 ? 's' : ''} (${m.etaOrig} → ${m.eta}).`,
       });
     }
     echeancierDossier(d).forEach(e => {
-      if (!e.dateEcheance) return;
+      if (!e.dateEcheance || e.paye) return;
       const j = daysBetween(today, e.dateEcheance);
       if (j >= 0 && j <= 7) {
         alerts.push({
@@ -121,8 +110,8 @@ function computeAlerts(today) {
         });
       }
     });
-    if (d.milestones.ata && !d.milestones.dedouanementReel) {
-      const j = daysBetween(d.milestones.ata, today);
+    if (m.ata && !m.dedouanementReel) {
+      const j = daysBetween(m.ata, today);
       if (j >= 5) {
         alerts.push({
           type: 'surestarie', sev: j >= 7 ? 'red' : 'amber', dossierRef: d.ref, dossierId: d.id,
@@ -134,10 +123,10 @@ function computeAlerts(today) {
   return alerts.sort((a, b) => (b.sev === 'red') - (a.sev === 'red'));
 }
 
-function computeKpis(today) {
+function computeKpis(dossiers, today) {
   const windows = [30, 60, 90];
   const byDevise = {};
-  const ech = allEcheances(today);
+  const ech = allEcheances(dossiers, today).filter(e => !e.paye);
   windows.forEach(w => {
     ech.forEach(e => {
       const j = daysBetween(today, e.dateEcheance);
@@ -147,18 +136,17 @@ function computeKpis(today) {
       }
     });
   });
-  const dossiers = listDossiers();
-  const withConteneurs = dossiers.filter(d => d.transport.conteneurs.length);
+  const withConteneurs = dossiers.filter(d => (d.transport?.conteneurs || []).length);
   const fretMoyen = withConteneurs.length
-    ? Math.round(withConteneurs.reduce((s, d) => s + (d.frais.fret?.reel ?? d.frais.fret?.est ?? 0), 0) / withConteneurs.reduce((s, d) => s + d.transport.conteneurs.length, 0))
+    ? Math.round(withConteneurs.reduce((s, d) => s + (d.frais?.fret?.reel ?? d.frais?.fret?.est ?? 0), 0) / withConteneurs.reduce((s, d) => s + d.transport.conteneurs.length, 0))
     : 0;
-  const withReel = dossiers.filter(d => Object.values(d.frais).some(f => f.reel !== null && f.reel !== undefined));
+  const withReel = dossiers.filter(d => Object.values(d.frais || {}).some(f => f.reel !== null && f.reel !== undefined));
   const ecarts = withReel.map(d => {
     const est = fraisTotal(d, 'est'); const reel = fraisTotal(d, 'reel');
     return est ? (reel - est) / est * 100 : 0;
   });
   const ecartMoyen = ecarts.length ? ecarts.reduce((s, v) => s + v, 0) / ecarts.length : 0;
-  const withAta = dossiers.filter(d => d.milestones.atd && d.milestones.ata);
+  const withAta = dossiers.filter(d => d.milestones?.atd && d.milestones?.ata);
   const leadTimes = withAta.map(d => daysBetween(d.milestones.atd, d.milestones.ata));
   const leadMoyen = leadTimes.length ? Math.round(leadTimes.reduce((s, v) => s + v, 0) / leadTimes.length) : 0;
 
@@ -166,7 +154,7 @@ function computeKpis(today) {
 }
 
 module.exports = {
-  FRAIS_LABELS, assembleDossier, listDossiers, valeurMarchandise, fraisTotal,
-  landedCost, echeancierDossier, allEcheances, computeAlerts, computeKpis,
-  daysBetween, addDays,
+  FRAIS_LABELS, valeurMarchandise, fraisTotal, landedCost, echeancierDossier,
+  allEcheances, computeAlerts, computeKpis, daysBetween, addDays,
+  montantPaye, soldeRestantFacture, fraisEngages, fraisPayes, fraisRestants,
 };
