@@ -129,6 +129,14 @@ function computeAlerts(dossiers, today) {
         });
       }
     });
+    const echeancesSansDate = echeancierDossier(d).filter(e => !e.paye && !e.dateEcheance);
+    if (echeancesSansDate.length) {
+      const montantTotal = echeancesSansDate.reduce((s, e) => s + e.montantDevise, 0);
+      alerts.push({
+        type: 'donnee_manquante', sev: 'amber', dossierRef: d.ref, dossierId: d.id,
+        text: `Échéance non planifiable — ${Math.round(montantTotal).toLocaleString('fr-FR')} ${d.devise} en attente d'une date de référence (ETA, ETD ou date de commande manquante). Non comptabilisé dans la trésorerie à engager.`,
+      });
+    }
     if (m.ata && !m.dedouanementReel) {
       const j = daysBetween(m.ata, today);
       if (j >= 5) {

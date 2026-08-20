@@ -471,7 +471,7 @@ function pageDashboard(){
       ${alerts.length===0?'<div class="alert-empty">Aucune alerte — tous les dossiers sont dans les délais.</div>':
         alerts.slice(0,8).map(a=>`
         <div class="alert-row"><span class="alert-dot ${a.sev}"></span>
-          <div><div class="alert-text">${a.type==='logistique'?'🚢':a.type==='finance'?'⏳':'🚨'} <b>${a.dossierRef}</b> — ${a.text}</div></div>
+          <div><div class="alert-text">${a.type==='logistique'?'🚢':a.type==='finance'?'⏳':a.type==='donnee_manquante'?'❓':'🚨'} <b>${a.dossierRef}</b> — ${a.text}</div></div>
         </div>`).join('')}
     </div>`;
 
