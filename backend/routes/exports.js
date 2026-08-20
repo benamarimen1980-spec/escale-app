@@ -17,27 +17,58 @@ router.get('/tresorerie/excel', async (req, res) => {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ESCALE';
   wb.created = new Date();
+
+  // ---- Feuille 1 : Échéancier détaillé ----
   const sheet = wb.addWorksheet('Échéancier trésorerie');
   sheet.columns = [
     { header: 'Dossier', key: 'ref', width: 16 }, { header: 'Fournisseur', key: 'fournisseur', width: 28 },
     { header: 'Type de règlement', key: 'type', width: 16 }, { header: '%', key: 'pct', width: 8 },
     { header: 'Base', key: 'base', width: 14 }, { header: 'Délai (j)', key: 'delai', width: 10 },
     { header: "Date d'échéance", key: 'date', width: 16 }, { header: 'Montant', key: 'montant', width: 14 },
-    { header: 'Devise', key: 'devise', width: 8 }, { header: 'Jours restants', key: 'jours', width: 12 },
+    { header: 'Devise', key: 'devise', width: 8 }, { header: 'Statut', key: 'statut', width: 14 },
+    { header: 'Jours restants', key: 'jours', width: 12 }, { header: 'Montant payé', key: 'montantPaye', width: 14 },
+    { header: 'Montant restant dû', key: 'montantRestant', width: 16 }, { header: 'Date de paiement', key: 'datePaiement', width: 16 },
   ];
   sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } };
 
   rows.forEach(e => {
     const j = logic.daysBetween(today(), e.dateEcheance);
+    const montant = Math.round(e.montantDevise);
     const row = sheet.addRow({
       ref: e.dossier.ref, fournisseur: e.dossier.fournisseur, type: `${e.type} (${e.pct}%)`,
       pct: e.pct, base: e.base.toUpperCase(), delai: e.delai, date: e.dateEcheance,
-      montant: Math.round(e.montantDevise), devise: e.dossier.devise, jours: j,
+      montant, devise: e.dossier.devise, statut: e.paye ? 'Payé' : (j < 0 ? 'En retard' : 'À payer'),
+      jours: e.paye ? '—' : j, montantPaye: e.paye ? montant : 0, montantRestant: e.paye ? 0 : montant,
+      datePaiement: e.datePaiement || '—',
     });
-    if (j <= 7) row.getCell('jours').font = { color: { argb: 'FFB5402F' }, bold: true };
+    if (e.paye) row.getCell('statut').font = { color: { argb: 'FF1E6F63' }, bold: true };
+    else if (j <= 7) { row.getCell('jours').font = { color: { argb: 'FFB5402F' }, bold: true }; row.getCell('statut').font = { color: { argb: 'FFB5402F' }, bold: true }; }
   });
   sheet.getColumn('montant').numFmt = '#,##0';
+  sheet.getColumn('montantPaye').numFmt = '#,##0';
+  sheet.getColumn('montantRestant').numFmt = '#,##0';
+
+  // ---- Feuille 2 : Résumé par dossier (avance payée / solde restant, frais engagés/payés/restants) ----
+  const summarySheet = wb.addWorksheet('Résumé par dossier');
+  summarySheet.columns = [
+    { header: 'Dossier', key: 'ref', width: 16 }, { header: 'Fournisseur', key: 'fournisseur', width: 26 },
+    { header: 'Devise', key: 'devise', width: 8 }, { header: 'Valeur facture', key: 'valeur', width: 16 },
+    { header: 'Avance payée', key: 'avance', width: 16 }, { header: 'Solde restant (facture)', key: 'solde', width: 20 },
+    { header: 'Frais engagés (TND)', key: 'fraisEng', width: 18 }, { header: 'Frais payés (TND)', key: 'fraisPaye', width: 16 },
+    { header: 'Frais restants (TND)', key: 'fraisRestant', width: 18 },
+  ];
+  summarySheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  summarySheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } };
+  dossiers.filter(d => d.statut !== 'cloture').forEach(d => {
+    summarySheet.addRow({
+      ref: d.ref, fournisseur: d.fournisseur, devise: d.devise,
+      valeur: Math.round(logic.valeurMarchandise(d)), avance: Math.round(logic.montantPaye(d)),
+      solde: Math.round(logic.soldeRestantFacture(d)), fraisEng: Math.round(logic.fraisEngages(d)),
+      fraisPaye: Math.round(logic.fraisPayes(d)), fraisRestant: Math.round(logic.fraisRestants(d)),
+    });
+  });
+  ['valeur', 'avance', 'solde', 'fraisEng', 'fraisPaye', 'fraisRestant'].forEach(k => { summarySheet.getColumn(k).numFmt = '#,##0'; });
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="echeancier-tresorerie-${today()}.xlsx"`);
