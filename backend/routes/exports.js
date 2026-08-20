@@ -49,26 +49,37 @@ router.get('/tresorerie/excel', async (req, res) => {
   sheet.getColumn('montantPaye').numFmt = '#,##0';
   sheet.getColumn('montantRestant').numFmt = '#,##0';
 
-  // ---- Feuille 2 : Résumé par dossier (avance payée / solde restant, frais engagés/payés/restants) ----
+  // ---- Feuille 2 : Résumé par dossier (une ligne par dossier — avance, solde, échéancier et frais combinés) ----
   const summarySheet = wb.addWorksheet('Résumé par dossier');
   summarySheet.columns = [
-    { header: 'Dossier', key: 'ref', width: 16 }, { header: 'Fournisseur', key: 'fournisseur', width: 26 },
-    { header: 'Devise', key: 'devise', width: 8 }, { header: 'Valeur facture', key: 'valeur', width: 16 },
-    { header: 'Avance payée', key: 'avance', width: 16 }, { header: 'Solde restant (facture)', key: 'solde', width: 20 },
-    { header: 'Frais engagés (TND)', key: 'fraisEng', width: 18 }, { header: 'Frais payés (TND)', key: 'fraisPaye', width: 16 },
+    { header: 'Dossier', key: 'ref', width: 16 }, { header: 'Fournisseur', key: 'fournisseur', width: 22 },
+    { header: 'Devise', key: 'devise', width: 8 }, { header: 'Valeur facture', key: 'valeur', width: 15 },
+    { header: 'Avance payée', key: 'avance', width: 14 }, { header: 'Solde restant', key: 'solde', width: 14 },
+    { header: 'Statut paiement facture', key: 'statutPaiement', width: 20 },
+    { header: 'Prochaine échéance', key: 'prochaineDate', width: 16 }, { header: 'Montant à payer', key: 'prochaineMontant', width: 15 },
+    { header: 'Jours restants', key: 'jours', width: 13 },
+    { header: 'Frais engagés (TND)', key: 'fraisEng', width: 17 }, { header: 'Frais payés (TND)', key: 'fraisPaye', width: 16 },
     { header: 'Frais restants (TND)', key: 'fraisRestant', width: 18 },
   ];
   summarySheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   summarySheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E6F63' } };
   dossiers.filter(d => d.statut !== 'cloture').forEach(d => {
-    summarySheet.addRow({
+    const prochaine = logic.prochaineEcheanceImpayee(d, today());
+    const statutPaiement = logic.statutPaiementFacture(d, today());
+    const jours = prochaine ? logic.daysBetween(today(), prochaine.dateEcheance) : null;
+    const row = summarySheet.addRow({
       ref: d.ref, fournisseur: d.fournisseur, devise: d.devise,
       valeur: Math.round(logic.valeurMarchandise(d)), avance: Math.round(logic.montantPaye(d)),
-      solde: Math.round(logic.soldeRestantFacture(d)), fraisEng: Math.round(logic.fraisEngages(d)),
-      fraisPaye: Math.round(logic.fraisPayes(d)), fraisRestant: Math.round(logic.fraisRestants(d)),
+      solde: Math.round(logic.soldeRestantFacture(d)), statutPaiement,
+      prochaineDate: prochaine ? prochaine.dateEcheance : '—',
+      prochaineMontant: prochaine ? Math.round(prochaine.montantDevise) : '—',
+      jours: jours === null ? '—' : (jours < 0 ? `en retard (${-jours} j)` : `${jours} j`),
+      fraisEng: Math.round(logic.fraisEngages(d)), fraisPaye: Math.round(logic.fraisPayes(d)), fraisRestant: Math.round(logic.fraisRestants(d)),
     });
+    if (statutPaiement.includes('retard')) row.getCell('statutPaiement').font = { color: { argb: 'FFB5402F' }, bold: true };
+    else if (statutPaiement === 'Payé intégralement') row.getCell('statutPaiement').font = { color: { argb: 'FF1E6F63' }, bold: true };
   });
-  ['valeur', 'avance', 'solde', 'fraisEng', 'fraisPaye', 'fraisRestant'].forEach(k => { summarySheet.getColumn(k).numFmt = '#,##0'; });
+  ['valeur', 'avance', 'solde', 'prochaineMontant', 'fraisEng', 'fraisPaye', 'fraisRestant'].forEach(k => { summarySheet.getColumn(k).numFmt = '#,##0'; });
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="echeancier-tresorerie-${today()}.xlsx"`);

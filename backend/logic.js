@@ -67,6 +67,25 @@ function fraisRestants(d) {
   return fraisEngages(d) - fraisPayes(d);
 }
 
+function prochaineEcheanceImpayee(d, today) {
+  const ech = echeancierDossier(d).filter(e => !e.paye && e.dateEcheance);
+  if (!ech.length) return null;
+  ech.sort((a, b) => new Date(a.dateEcheance) - new Date(b.dateEcheance));
+  return ech[0];
+}
+
+function statutPaiementFacture(d, today) {
+  const paiements = d.paiements || [];
+  if (!paiements.length) return 'Aucune échéance';
+  const tousPayes = paiements.every(p => p.paye);
+  if (tousPayes) return 'Payé intégralement';
+  const certainsPayes = paiements.some(p => p.paye);
+  const prochaine = prochaineEcheanceImpayee(d, today);
+  const enRetard = prochaine && daysBetween(today, prochaine.dateEcheance) < 0;
+  if (enRetard) return certainsPayes ? 'Partiel — en retard' : 'En retard';
+  return certainsPayes ? 'Partiellement payé' : 'À payer';
+}
+
 function echeancierDossier(d) {
   return (d.paiements || []).map(p => {
     const base = p.base === 'commande' ? p.dateBase : milestoneDate(d, p.base);
@@ -157,4 +176,5 @@ module.exports = {
   FRAIS_LABELS, valeurMarchandise, fraisTotal, landedCost, echeancierDossier,
   allEcheances, computeAlerts, computeKpis, daysBetween, addDays,
   montantPaye, soldeRestantFacture, fraisEngages, fraisPayes, fraisRestants,
+  prochaineEcheanceImpayee, statutPaiementFacture,
 };

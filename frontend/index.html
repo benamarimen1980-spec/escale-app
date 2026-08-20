@@ -106,6 +106,7 @@ input,select,textarea{font-family:inherit;}
 .bar-stack{width:100%;max-width:46px;display:flex;flex-direction:column-reverse;border-radius:4px 4px 0 0;overflow:hidden;}
 .bar-seg{width:100%;}
 .bar-label{font-size:10.5px;color:var(--ink-soft);font-family:var(--font-mono);}
+.bar-amount{font-size:11px;color:var(--ink);font-family:var(--font-mono);font-weight:600;margin-bottom:6px;text-align:center;white-space:nowrap;}
 .legend{display:flex;gap:14px;margin-top:10px;flex-wrap:wrap;}
 .legend-item{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft);}
 .legend-swatch{width:9px;height:9px;border-radius:2px;}
@@ -482,8 +483,10 @@ function pageDashboard(){
         ${windows.map(w=>{
           const dv = k.byDevise[w]||{};
           const total = Object.values(dv).reduce((s,v)=>s+v,0);
+          const amountLabel = Object.keys(dv).length ? Object.entries(dv).map(([c,v])=>fmtMoney(Math.round(v),c)).join(' + ') : '0';
           return `<div class="bar-col">
-            <div class="bar-stack" style="height:${Math.max(6,total/maxVal*130)}px">
+            <div class="bar-amount">${amountLabel}</div>
+            <div class="bar-stack" style="height:${Math.max(6,total/maxVal*130)}px; ${total?'':'background:var(--border);'}">
               ${Object.entries(dv).map(([c,v])=>`<div class="bar-seg" style="height:${v/(total||1)*100}%;background:${devColors[c]||'#999'}"></div>`).join('')}
             </div>
             <div class="bar-label">${w} jours</div></div>`;
@@ -608,6 +611,22 @@ function soldeRestantFactureC(d){ return valeurMarchandiseC(d) - montantPayeC(d)
 function fraisEngagesC(d){ return Object.values(d.frais).reduce((s,f)=>s+(f.reel??f.est??0),0); }
 function fraisPayesC(d){ return Object.values(d.frais).reduce((s,f)=>s+(f.paye?(f.reel??f.est??0):0),0); }
 function fraisRestantsC(d){ return fraisEngagesC(d) - fraisPayesC(d); }
+function prochaineEcheanceImpayeeC(dossierId){
+  const ech = cache.echeancier.filter(e=>e.dossierId==dossierId && !e.paye && e.dateEcheance);
+  if(!ech.length) return null;
+  ech.sort((a,b)=>new Date(a.dateEcheance)-new Date(b.dateEcheance));
+  return ech[0];
+}
+function statutPaiementFactureC(d){
+  const paiements = d.paiements||[];
+  if(!paiements.length) return 'Aucune échéance';
+  if(paiements.every(p=>p.paye)) return 'Payé intégralement';
+  const certainsPayes = paiements.some(p=>p.paye);
+  const prochaine = prochaineEcheanceImpayeeC(d.id);
+  const enRetard = prochaine && prochaine.joursRestants<0;
+  if(enRetard) return certainsPayes?'Partiel — en retard':'En retard';
+  return certainsPayes?'Partiellement payé':'À payer';
+}
 
 function pageFinance(){
   const canEdit = ['admin','finance'].includes(session.user.role);
@@ -669,18 +688,24 @@ function pageTresorerie(){
   return `
   <div class="panel">
     <h2>Résumé par dossier</h2>
-    <div class="panel-sub">Avance payée et solde restant sur la facture fournisseur, frais annexes engagés (coût réel une fois saisi) et déjà réglés</div>
-    <table><thead><tr><th class="txt">Dossier</th><th class="txt">Fournisseur</th><th>Valeur facture</th><th>Avance payée</th><th>Solde restant</th><th>Frais engagés</th><th>Frais payés</th><th>Frais restants</th></tr></thead>
-      <tbody>${dossiersActifs.map(d=>`<tr>
+    <div class="panel-sub">Avance payée, solde restant, prochaine échéance à régler et frais annexes — tout combiné par dossier, exportable ci-dessous</div>
+    <table><thead><tr><th class="txt">Dossier</th><th class="txt">Fournisseur</th><th>Valeur facture</th><th>Avance payée</th><th>Solde restant</th><th class="txt">Statut</th><th>Prochaine échéance</th><th>Jours restants</th><th>Frais restants</th></tr></thead>
+      <tbody>${dossiersActifs.map(d=>{
+        const statut = statutPaiementFactureC(d);
+        const prochaine = prochaineEcheanceImpayeeC(d.id);
+        const statutColor = statut.includes('retard') ? 'diff-up' : (statut==='Payé intégralement' ? 'diff-down' : '');
+        return `<tr>
         <td class="txt">${d.ref}</td><td class="txt">${d.fournisseur}</td>
         <td>${fmtMoney(valeurMarchandiseC(d), d.devise)}</td>
         <td class="diff-down">${fmtMoney(montantPayeC(d), d.devise)}</td>
         <td class="${soldeRestantFactureC(d)>0?'diff-up':''}">${fmtMoney(soldeRestantFactureC(d), d.devise)}</td>
-        <td>${fmtMoney(Math.round(fraisEngagesC(d)), 'TND')}</td>
-        <td class="diff-down">${fmtMoney(Math.round(fraisPayesC(d)), 'TND')}</td>
+        <td class="txt ${statutColor}">${statut}</td>
+        <td>${prochaine? fmtDate(prochaine.dateEcheance)+' — '+fmtMoney(prochaine.montant, d.devise) : '—'}</td>
+        <td class="${prochaine && prochaine.joursRestants<=7?'diff-up':''}">${prochaine? (prochaine.joursRestants<0?'en retard':prochaine.joursRestants+' j') : '—'}</td>
         <td class="${fraisRestantsC(d)>0?'diff-up':''}">${fmtMoney(Math.round(fraisRestantsC(d)), 'TND')}</td>
-      </tr>`).join('') || '<tr><td class="txt muted" colspan="8">Aucun dossier en cours.</td></tr>'}</tbody>
+      </tr>`;}).join('') || '<tr><td class="txt muted" colspan="9">Aucun dossier en cours.</td></tr>'}</tbody>
     </table>
+    <div style="margin-top:12px;"><button class="btn small" id="exportTresorerieXlsx2">⬇ Exporter tout (Excel — résumé + échéancier détaillé)</button></div>
   </div>
   <div class="panel">
     <div class="panel-head"><h2>Échéancier de décaissement — facture fournisseur</h2>
@@ -1074,6 +1099,8 @@ function attachContentHandlers(){
 
   const exportTresorerie = document.getElementById('exportTresorerieXlsx');
   if(exportTresorerie) exportTresorerie.onclick = ()=> downloadFile('/exports/tresorerie/excel', 'echeancier-tresorerie.xlsx');
+  const exportTresorerie2 = document.getElementById('exportTresorerieXlsx2');
+  if(exportTresorerie2) exportTresorerie2.onclick = ()=> downloadFile('/exports/tresorerie/excel', 'echeancier-tresorerie.xlsx');
   const exportDossiers = document.getElementById('exportDossiersXlsx');
   if(exportDossiers) exportDossiers.onclick = ()=> downloadFile('/exports/dossiers/excel', 'dossiers-import.xlsx');
 }
